@@ -156,7 +156,7 @@ export default function App() {
     return (
       <div className="loading">
         <Wallet size={38} />
-        <h1>Mis cuentas</h1>
+        <h1>Arquitecta Patricia Tomoff</h1>
         <p>{error || "Abriendo tus datos locales…"}</p>
         {error && (
           <button className="button" onClick={() => location.reload()}>
@@ -1579,7 +1579,9 @@ export default function App() {
           </button>
         </div>
         <section className="panel report">
-          <span className="eyebrow">MIS CUENTAS · INFORME PERSONAL</span>
+          <span className="eyebrow">
+            ARQUITECTA PATRICIA TOMOFF · INFORME PERSONAL
+          </span>
           <h2>Resumen financiero — {monthLabel(month)}</h2>
           <p>
             Generado el {dateLabel(today())}.{" "}
@@ -1778,7 +1780,7 @@ export default function App() {
           </div>
         </section>
         <section className="panel">
-          <h2>Acerca de Mis cuentas</h2>
+          <h2>Acerca de Mi organizador personal</h2>
           <p>
             Versión 1 · Moneda: pesos argentinos (ARS) · Tasas de financiación:
             TEM mensual.
@@ -1811,7 +1813,8 @@ export default function App() {
             <Wallet size={25} />
           </div>
           <span>
-            mis cuentas<small>MI ORGANIZADOR PERSONAL</small>
+            <span className="brand-profession">Arquitecta</span>
+            Patricia Tomoff<small>Mi organizador personal</small>
           </span>
         </a>
         <div className="sidebar-caption">MI PANEL</div>
