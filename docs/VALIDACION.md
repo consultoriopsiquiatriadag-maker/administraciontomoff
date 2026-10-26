@@ -1,0 +1,34 @@
+# Validación de la V1
+
+Comandos reproducibles:
+
+```sh
+npm ci --cache /tmp/mis-cuentas-npm
+npm run build
+npm test
+npm run test:browser
+npm audit
+```
+
+Las pruebas unitarias cubren prioridades por costo/saldo/vencimiento, mínimos insuficientes, pagos previos, ausencia de tasas, excedentes, redondeo a centavos, invariantes sobre múltiples presupuestos, cuotas 3/12, cambio de año, separación de períodos, referencias inválidas, duplicados y sobrepagos.
+
+La persistencia se prueba reabriendo IndexedDB y restaurando datos más documentos desde una copia. Se comprueba que una importación inválida deja la base intacta y que la eliminación de registros limpia documentos huérfanos.
+
+Las pruebas de navegador crean tarjeta, resumen, consumo, pago, cuotas, servicio, factura y presupuesto; recargan para confirmar persistencia; exportan una copia con un PDF, vacían el almacenamiento y restauran la copia verificando el saldo y el documento. También recorren todas las secciones con demostración, verifican el diseño a 390 px, comprueban ausencia de solicitudes externas y eliminan la demostración.
+
+La compilación verifica TypeScript y genera la aplicación de producción con su política de contenido. Se hace además una solicitud real y navegación a la compilación servida localmente.
+
+No se ha validado un instalador PWA/escritorio ni el lanzador en Windows real. No hay OCR ni interpretación automática de archivos. Las pruebas usan información ficticia.
+
+## Resultado de esta entrega
+
+- Instalación limpia mediante `npm ci`: correcta.
+- TypeScript y compilación de producción: correctos.
+- Pruebas unitarias y de persistencia: **22 de 22**.
+- Recorridos con Chromium en desarrollo: **3 de 3**.
+- Los mismos recorridos contra la compilación de producción: **3 de 3**.
+- Petición HTTP a producción: **200**.
+- `npm audit`: **0 vulnerabilidades** al realizar esta entrega.
+- Validación responsive a 390 px: sin desbordamiento horizontal del documento.
+
+La comprobación de navegador también ejercita la creación automática de una compra 3/12 desde un consumo, corrección de registros y eliminación en cascada. Los resultados son de este entorno Linux; no equivalen a una prueba en Windows.

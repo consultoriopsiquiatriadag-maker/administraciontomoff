@@ -1,0 +1,85 @@
+# Arquitectura y modelo de la V1
+
+## Decisiones
+
+La prioridad es un panel doméstico sencillo. React + TypeScript permiten reutilizar la interfaz en una futura PWA o contenedor de escritorio. Vite genera archivos estáticos que se sirven localmente; no existe un backend que reciba información financiera. IndexedDB conserva tanto registros estructurados como documentos Blob. Zod valida datos de formularios e importaciones.
+
+La V1 separa datos reales, almacenamiento, reglas financieras e interfaz. No se presupone que los importes del resumen puedan reconstruirse perfectamente a partir de consumos: el total informado conserva autoridad.
+
+```mermaid
+flowchart LR
+    UI[Interfaz React] --> Model[Modelo y validación]
+    UI --> Finance[Motor financiero puro]
+    UI --> Storage[Adaptador de almacenamiento]
+    Storage --> DB[(IndexedDB local)]
+    Storage --> Backup[Copia versionada + documentos]
+    Model --> Storage
+```
+
+## Estructura
+
+- `src/model.ts`: entidades, esquemas, tipos y validación de integridad referencial.
+- `src/finance.ts`: cálculos puros, proyecciones, prioridades y formato argentino.
+- `src/storage.ts`: IndexedDB, adjuntos, exportación/importación y transacciones.
+- `src/forms.ts`: definición de campos y ayudas para cada entidad.
+- `src/ui.tsx`: formularios, diálogos accesibles, tablas, estados y gráficos reutilizables.
+- `src/App.tsx`: navegación, composición de pantallas y coordinación de acciones.
+- `src/demo.ts`: datos ficticios opcionales, independientes de la base vacía inicial.
+- `src/style.css`: diseño adaptable, estilos de impresión y componentes visuales.
+- `tests/finance.test.ts`: escenarios e invariantes del plan financiero.
+- `tests/storage.test.ts`: integridad, persistencia y restauración con documentos.
+- `tests/browser`: recorridos completos con Chromium.
+
+## Entidades
+
+| Entidad    | Campos principales y relaciones                                                                                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Card       | id, banco, nombre, marca, últimos 4, días habituales de cierre/vencimiento, interés mensual y financiación mensual opcionales, observaciones                                                         |
+| Statement  | id, cardId, período, cierre/vencimiento, saldo anterior, consumos informados, intereses, impuestos, otros cargos, pagos ya descontados por el banco, total real, mínimo, TEM opcional, observaciones |
+| Expense    | id, statementId, fecha, descripción, importe, categoría, observación, purchaseId opcional                                                                                                            |
+| Purchase   | id, cardId, descripción, período base, cuota actual, total de cuotas, valor de cuota                                                                                                                 |
+| Payment    | id, statementId, fecha, importe, medio de pago                                                                                                                                                       |
+| Service    | id, empresa, tipo personalizable, referencia opcional, observaciones                                                                                                                                 |
+| Invoice    | id, serviceId, período, emisión/vencimiento, importe, pagado, fecha/medio de pago, observaciones                                                                                                     |
+| Budget     | id, período, ingresos, otros gastos y dinero reservado para tarjetas                                                                                                                                 |
+| Attachment | id, ownerId de resumen o factura, nombre, MIME y Blob del documento                                                                                                                                  |
+| State      | versión del esquema, marca de demostración y colecciones de entidades                                                                                                                                |
+
+Las fechas usan `YYYY-MM-DD`, los períodos `YYYY-MM`; los cálculos de días usan fechas sin horas para evitar cambios por horario de verano. Todos los importes son enteros no negativos en centavos, con límite por campo. Las tasas son números porcentuales mensuales o `null`: cero es una tasa conocida, `null` una tasa ausente. Los identificadores nuevos usan UUID.
+
+Existe un resumen por tarjeta/período, una factura por servicio/período y un presupuesto por período. El mínimo no puede superar el total, la cuota actual no puede superar la cantidad total, y los pagos registrados no pueden superar el total. No se aceptan fechas imposibles ni referencias huérfanas.
+
+## Motor de pagos
+
+1. Seleccionar resúmenes del período con saldo pendiente.
+2. Descontar pagos registrados tanto del saldo como del mínimo exigido; limitar el mínimo pendiente al saldo.
+3. Distribuir mínimos por vencimiento, primero los más antiguos. Si no alcanza, mostrar el déficit y los mínimos descubiertos de cada tarjeta.
+4. Asignar excedente según estrategia:
+   - Recomendada: vencimientos dentro de tres días o anteriores; luego mayor TEM conocida; luego menor saldo.
+   - Interés: mayor TEM conocida y vencimiento como desempate.
+   - Bola de nieve: menor saldo.
+5. No asignar más que el saldo ni más que el presupuesto. Mostrar excedente no asignado.
+
+Las tasas desconocidas se señalan expresamente; no se consideran cero ni se inventan. Se usa primero la tasa del resumen y luego la de financiación de la tarjeta. No se usa el campo de interés general como sustituto silencioso de financiación. La comparación de interés estimado se omite si queda deuda con tasa desconocida.
+
+La recomendación no garantiza el menor costo: desconoce las condiciones contractuales, interés por día, impuestos y cargos. No usa tasas bancarias externas. El historial alerta sobre aumentos entre los dos últimos resúmenes disponibles por tarjeta.
+
+## Cuotas
+
+La compra tiene un único identificador y un ancla: período de la cuota actual. La cantidad de meses transcurridos determina la cuota de cualquier período. El compromiso restante desde el ancla es `(total − actual) × valor`. La proyección mensual incluye cuotas posteriores al ancla hasta completar el total. Registrar un consumo con una compra nueva en cuotas crea la compra y su vínculo en el mismo cambio de estado validado; los consumos posteriores deben reutilizarla. No se crean resúmenes, consumos ni obligaciones reales a partir de proyecciones.
+
+## Persistencia y recuperación
+
+IndexedDB `mis-cuentas-local`, versión 1, tiene almacenes `state` y `attachments`. Las escrituras de estado y la eliminación de documentos huérfanos comparten una transacción. La importación reemplaza ambos almacenes en una transacción; primero se valida por completo la copia. Los errores de almacenamiento se muestran: no se anuncia éxito si no se confirma la transacción.
+
+Las acciones leen el estado más reciente bajo Web Locks para serializar las escrituras entre pestañas del mismo origen. BroadcastChannel informa las modificaciones de registros a otras pestañas. Conviene trabajar en una única pestaña para no tener formularios con datos anteriores a una edición realizada en otra pestaña.
+
+La copia tiene `format`, `version`, fecha de exportación, `state` y documentos base64. La versión permite agregar migraciones explícitas en futuras versiones; hoy se acepta solo versión 1. La base es local y no está cifrada. El navegador puede retirar almacenamiento, por eso la copia portable es esencial.
+
+## Extensiones previstas
+
+- PWA: manifiesto y service worker con recursos locales; probar actualizaciones antes de habilitar cachés.
+- Escritorio: encapsular el mismo frontend y sustituir el adaptador de almacenamiento si corresponde; conservar el formato portable.
+- OCR/extracción: agregar un adaptador de documentos que devuelva un borrador para revisión. No escribir importes automáticamente ni ejecutar servicios externos sin autorización explícita.
+- Sincronización: nueva capa optativa con autenticación, cifrado, conflictos y consentimiento. La V1 no contiene ninguna ruta de sincronización.
+- Migraciones: incrementar versiones y migrar una copia antes de alterar registros. Mantener las funciones presentes y sus pruebas.
