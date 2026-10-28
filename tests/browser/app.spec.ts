@@ -312,3 +312,70 @@ test("cuotas desde consumo, correcciones y eliminación en cascada", async ({
     .click();
   await expect(page.locator(".card-panel")).toHaveCount(1);
 });
+
+test("logos locales compartidos por banco, persistencia y respaldo", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explorar demostración" }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Mis tarjetas", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const cards = page.locator(".card-panel");
+  for (let i = 0; i < 2; i++) {
+    await cards
+      .nth(i)
+      .getByRole("button", { name: "Editar", exact: true })
+      .click();
+    await dialog.getByLabel("Banco / emisor").fill(i ? "Macro" : "Banco Macro");
+    await dialog.getByRole("button", { name: "Guardar", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+  }
+  await page
+    .getByLabel("Logo de Banco Macro", { exact: true })
+    .setInputFiles({
+      name: "logo-prueba.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  await expect(page.locator(".bank-logo img")).toHaveCount(2);
+  expect(
+    await page
+      .locator(".bank-logo img")
+      .evaluateAll((imgs) =>
+        imgs.every((img) => (img as HTMLImageElement).naturalWidth > 0),
+      ),
+  ).toBe(true);
+  await page.reload();
+  await expect(page.locator(".bank-logo img")).toHaveCount(2);
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Configuración", exact: true })
+    .click();
+  const downloaded = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Exportar copia de seguridad" })
+    .click();
+  const file = await downloaded;
+  const raw = await fs.readFile((await file.path())!, "utf8");
+  const backup = JSON.parse(raw);
+  expect(
+    backup.attachments.filter(
+      (a: { ownerId: string }) => a.ownerId === "bank-logo:macro",
+    ),
+  ).toHaveLength(1);
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Mis tarjetas", exact: true })
+    .click();
+  page.once("dialog", (d) => d.accept());
+  await page
+    .getByRole("button", { name: "Quitar logo de Banco Macro", exact: true })
+    .click();
+  await expect(page.locator(".bank-logo img")).toHaveCount(0);
+});

@@ -1,3 +1,4 @@
+import { bankLogoOwner, isBankLogo } from "./banks";
 import { emptyState, validateState, type State } from "./model";
 import { z } from "zod";
 export type Attachment = {
@@ -8,6 +9,12 @@ export type Attachment = {
   blob: Blob;
 };
 const DB = "mis-cuentas-local";
+const attachmentOwners = (s: State) =>
+  new Set([
+    ...s.statements.map((x) => x.id),
+    ...s.invoices.map((x) => x.id),
+    ...s.cards.map((c) => bankLogoOwner(c.bank)),
+  ]);
 export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const r = indexedDB.open(DB, 1);
@@ -64,7 +71,7 @@ export async function saveState(s: State, attachments?: Attachment[]) {
     const t = db.transaction(["state", "attachments"], "readwrite");
     const done = completed(t);
     t.objectStore("state").put(s, "data");
-    const owners = new Set([...s.statements, ...s.invoices].map((x) => x.id));
+    const owners = attachmentOwners(s);
     if (attachments) {
       t.objectStore("attachments").clear();
       for (const a of attachments) t.objectStore("attachments").put(a);
@@ -86,6 +93,12 @@ export async function saveState(s: State, attachments?: Attachment[]) {
 export async function attach(ownerId: string, file: File) {
   if (file.size > 15 * 1024 * 1024)
     throw Error("El documento no puede superar 15 MB.");
+  if (
+    isBankLogo(ownerId) &&
+    (file.size > 2 * 1024 * 1024 ||
+      !["image/png", "image/jpeg"].includes(file.type))
+  )
+    throw Error("El logo debe ser PNG o JPG y no superar 2 MB.");
   const header = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   const valid =
     (file.type === "application/pdf" &&
@@ -105,10 +118,17 @@ export async function attach(ownerId: string, file: File) {
     const t = db.transaction(["state", "attachments"], "readwrite");
     const done = completed(t);
     const s = (await request(t.objectStore("state").get("data"))) as State;
-    if (!s || ![...s.statements, ...s.invoices].some((x) => x.id === ownerId)) {
+    if (!s || !attachmentOwners(s).has(ownerId)) {
       t.abort();
       await done;
       return;
+    }
+    if (isBankLogo(ownerId)) {
+      const previous = (await request(
+        t.objectStore("attachments").getAll(),
+      )) as Attachment[];
+      for (const a of previous)
+        if (a.ownerId === ownerId) t.objectStore("attachments").delete(a.id);
     }
     t.objectStore("attachments").put({
       id: crypto.randomUUID(),
@@ -179,14 +199,35 @@ export async function parseBackup(raw: string) {
   if (raw.length > 150 * 1024 * 1024) throw Error("La copia supera 150 MB.");
   const b = backupSchema.parse(JSON.parse(raw));
   const state = validateState(b.state),
-    owners = new Set([...state.statements, ...state.invoices].map((x) => x.id));
+    owners = attachmentOwners(state);
   if (new Set(b.attachments.map((x) => x.id)).size !== b.attachments.length)
     throw Error("Documentos duplicados");
+  const logoOwners = b.attachments
+    .filter((a) => isBankLogo(a.ownerId))
+    .map((a) => a.ownerId);
+  if (new Set(logoOwners).size !== logoOwners.length)
+    throw Error("Logos de banco duplicados");
   const attachments = b.attachments.map((a) => {
-    if (!owners.has(a.ownerId)) throw Error("Documento sin factura o resumen");
+    if (!owners.has(a.ownerId))
+      throw Error("Documento o logo sin registro asociado");
     const bytes = Uint8Array.from(atob(a.data), (c) => c.charCodeAt(0));
     if (bytes.length > 15 * 1024 * 1024)
       throw Error("Documento demasiado grande");
+    if (isBankLogo(a.ownerId)) {
+      const png =
+        a.type === "image/png" &&
+        bytes[0] === 137 &&
+        bytes[1] === 80 &&
+        bytes[2] === 78 &&
+        bytes[3] === 71;
+      const jpeg =
+        a.type === "image/jpeg" &&
+        bytes[0] === 255 &&
+        bytes[1] === 216 &&
+        bytes[2] === 255;
+      if (bytes.length > 2 * 1024 * 1024 || !(png || jpeg))
+        throw Error("Logo PNG/JPG inválido o demasiado grande");
+    }
     return {
       id: a.id,
       ownerId: a.ownerId,

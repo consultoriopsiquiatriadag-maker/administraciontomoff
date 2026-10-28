@@ -32,3 +32,5 @@ No se ha validado un instalador PWA/escritorio ni el lanzador en Windows real. N
 - Validación responsive a 390 px: sin desbordamiento horizontal del documento.
 
 La comprobación de navegador también ejercita la creación automática de una compra 3/12 desde un consumo, corrección de registros y eliminación en cascada. Los resultados son de este entorno Linux; no equivalen a una prueba en Windows.
+
+Actualización de logos: compilación correcta, **25 pruebas unitarias/de persistencia** y **4 recorridos de navegador contra producción** aprobados. Se verificaron alias de emisor, reemplazo único de logo, conservación mientras quede otra tarjeta, restauración binaria en copias, rechazo de PDF/SVG como logo y visualización tras recargar.

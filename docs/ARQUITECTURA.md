@@ -83,3 +83,7 @@ La copia tiene `format`, `version`, fecha de exportación, `state` y documentos 
 - OCR/extracción: agregar un adaptador de documentos que devuelva un borrador para revisión. No escribir importes automáticamente ni ejecutar servicios externos sin autorización explícita.
 - Sincronización: nueva capa optativa con autenticación, cifrado, conflictos y consentimiento. La V1 no contiene ninguna ruta de sincronización.
 - Migraciones: incrementar versiones y migrar una copia antes de alterar registros. Mantener las funciones presentes y sus pruebas.
+
+## Logos locales por emisor
+
+`src/banks.ts` normaliza nombres equivalentes y asigna un propietario estable `bank-logo:<emisor>`. `src/BankLogo.tsx` muestra el Blob local mediante una URL temporal, que se libera cuando deja de usarse. La carga admite PNG/JPG hasta 2 MB y reemplaza el logo anterior del emisor en una transacción; no requiere una migración de los registros financieros. Los logos se guardan en el almacén existente de adjuntos, se incluyen en las copias y se conservan mientras exista al menos una tarjeta de ese emisor. Sin imagen, se mantiene un ícono genérico y el nombre textual. No se realizan descargas de imágenes al usar la aplicación.

@@ -1,3 +1,5 @@
+import { BankLogo } from "./BankLogo";
+import { bankLogoOwner } from "./banks";
 import { fieldsFor } from "./forms";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -329,7 +331,14 @@ export default function App() {
         attach(ownerId, file),
       );
       setAttachments(await readAttachments());
-      setNotice("Documento guardado localmente.");
+      setNotice(
+        ownerId.startsWith("bank-logo:")
+          ? "Logo del banco guardado en este dispositivo."
+          : "Documento guardado localmente.",
+      );
+      const channel = new BroadcastChannel("mis-cuentas");
+      channel.postMessage("updated");
+      channel.close();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -565,7 +574,7 @@ export default function App() {
                           if (st) setDetail(st.id);
                         }}
                       >
-                        <CreditCard size={22} />
+                        <BankLogo bank={c.bank} attachments={attachments} />
                         <div>
                           <strong>{c.name}</strong>
                           <small>•••• {c.last4}</small>
@@ -656,7 +665,10 @@ export default function App() {
             <section className="panel card-panel" key={c.id}>
               <div className={"bank-card theme-" + (i % 3)}>
                 <div>
-                  <span>{c.bank}</span>
+                  <span className="bank-name">
+                    <BankLogo bank={c.bank} attachments={attachments} />
+                    <span>{c.bank}</span>
+                  </span>
                   <CreditCard size={27} />
                 </div>
                 <h2>{c.name}</h2>
@@ -678,6 +690,62 @@ export default function App() {
                       : c.financingRate + " % TEM"}
                   </strong>
                 </span>
+              </div>
+              <div className="bank-logo-controls">
+                <label className="button secondary small">
+                  <Upload size={15} />
+                  {attachments.some((a) => a.ownerId === bankLogoOwner(c.bank))
+                    ? "Cambiar logo"
+                    : "Cargar logo del banco"}
+                  <input
+                    className="file-input"
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    aria-label={`Logo de ${c.bank}`}
+                    onChange={(e) => {
+                      void upload(bankLogoOwner(c.bank), e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {attachments.some(
+                  (a) => a.ownerId === bankLogoOwner(c.bank),
+                ) && (
+                  <button
+                    className="icon-button"
+                    aria-label={`Quitar logo de ${c.bank}`}
+                    onClick={async () => {
+                      if (
+                        !confirm(
+                          "¿Quitar el logo de todas las tarjetas de este banco?",
+                        )
+                      )
+                        return;
+                      try {
+                        await navigator.locks.request(
+                          "mis-cuentas-write",
+                          async () => {
+                            const all = await readAttachments();
+                            for (const a of all.filter(
+                              (a) => a.ownerId === bankLogoOwner(c.bank),
+                            ))
+                              await deleteAttachment(a.id);
+                          },
+                        );
+                        setAttachments(await readAttachments());
+                        setNotice("Logo eliminado.");
+                      } catch (e) {
+                        setError((e as Error).message);
+                      }
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+                <small>
+                  PNG o JPG, hasta 2 MB. Se comparte con las tarjetas del mismo
+                  banco.
+                </small>
               </div>
               {c.notes && <p className="muted">{c.notes}</p>}
               <div className="row-between">
@@ -1007,7 +1075,16 @@ export default function App() {
               ]}
               rows={plan.rows.map((r) => [
                 <>
-                  <strong>{cardName(r.statement.cardId)}</strong>
+                  <span className="card-bank-label">
+                    <BankLogo
+                      bank={
+                        s.cards.find((c) => c.id === r.statement.cardId)
+                          ?.bank ?? ""
+                      }
+                      attachments={attachments}
+                    />
+                    <strong>{cardName(r.statement.cardId)}</strong>
+                  </span>
                   <small>
                     {dateLabel(r.statement.dueDate)} ·{" "}
                     {daysUntil(r.statement.dueDate)} días

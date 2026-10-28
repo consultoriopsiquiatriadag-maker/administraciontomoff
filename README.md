@@ -81,3 +81,9 @@ Consulta [arquitectura y modelo](docs/ARQUITECTURA.md) y [validación](docs/VALI
 ## Versión web con GitHub Pages
 
 El proyecto incluye publicación automática desde `main`, con pruebas y compilación previas. Sigue [los pasos de activación y traslado de datos](docs/PUBLICACION-WEB.md). Los datos financieros se conservan en el navegador de cada dispositivo y no se suben a GitHub. No hay sincronización automática entre equipos.
+
+## Logos de bancos y emisores
+
+En **Mis tarjetas → Cargar logo del banco**, selecciona un PNG o JPG de hasta 2 MB. El logo aparece en las tarjetas, el panel y el plan de pago; los nombres equivalentes (Macro/Banco Macro, Santander/Santander Río, Amex/American Express) comparten una imagen. Se puede cambiar o quitar desde la tarjeta. Los bancos sin logo muestran un ícono genérico, conservando su nombre visible.
+
+Las imágenes se almacenan localmente en IndexedDB, se incluyen en las copias y no se descargan desde servicios externos al abrir la app. Eliminar una tarjeta conserva el logo si queda otra del mismo banco. Para restaurar una copia con logos, usa esta versión o una posterior de la aplicación. Las copias anteriores siguen siendo compatibles.
