@@ -97,3 +97,9 @@ El selector de moneda permite consultar ARS y USD por separado. Los pagos y pres
 Consulta el [paso a paso de importación, revisión y compatibilidad](docs/IMPORTACION-CUENTAS.md). Las copias nuevas tienen versión 2; se aceptan las de versión 1 y se migran sin cambiar los importes existentes.
 
 También puedes importar **sin manejar archivos**: en Configuración → Importar cuentas extraídas, pega el código `MCUENTAS1:` recibido en el chat y pulsa **Revisar datos pegados**. La carga mantiene la misma revisión previa y las mismas protecciones contra duplicados; en Mac puedes pegar con ⌘V. El código y los datos se procesan localmente en el navegador.
+
+## Preparar un resumen nuevo con tu propio ChatGPT
+
+En **Configuración → Preparar un resumen con mi ChatGPT** puedes copiar un prompt con el formato exacto y las referencias parciales de tus cuentas y cuotas. Pégalo en tu ChatGPT, adjunta el PDF mensual, copia su respuesta JSON y pégala en el organizador para revisar e importar. No se requieren archivos descargables, códigos comprimidos ni una API. La web no manda los documentos a ChatGPT automáticamente.
+
+Consulta la [guía del flujo mensual con ChatGPT](docs/MI-CHATGPT.md). Los meses anteriores se conservan y las compras vinculadas no se duplican por aparecer en otro resumen.

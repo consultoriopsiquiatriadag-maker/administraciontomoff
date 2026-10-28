@@ -1,3 +1,4 @@
+import { StatementPrompt } from "./StatementPrompt";
 import { ImportAccounts } from "./ImportAccounts";
 import { mergeExtracted } from "./importAccounts";
 import { BankLogo } from "./BankLogo";
@@ -1865,6 +1866,7 @@ export default function App() {
   } else
     content = (
       <>
+        <StatementPrompt state={s} />
         <ImportAccounts
           state={s}
           onImport={async (bundle, choices) => {

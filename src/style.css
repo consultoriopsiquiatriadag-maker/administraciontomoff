@@ -1607,3 +1607,39 @@ dialog form {
 .paste-import small {
   margin-bottom: 15px;
 }
+
+.statement-prompt ol {
+  padding-left: 24px;
+  font-size: 14px;
+  line-height: 1.9;
+  color: #526d7c;
+}
+.prompt-scope {
+  display: block;
+  max-width: 440px;
+  margin: 20px 0 10px;
+}
+.prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.statement-prompt details {
+  font-size: 13px;
+  color: #527b70;
+}
+.statement-prompt summary {
+  cursor: pointer;
+  min-height: 36px;
+}
+.statement-prompt textarea {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  max-height: 550px;
+  margin-top: 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}

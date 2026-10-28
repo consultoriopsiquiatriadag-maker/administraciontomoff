@@ -4,6 +4,7 @@ import { currency, dateLabel } from "./finance";
 import {
   parseExtracted,
   parseExtractedText,
+  importErrorMessage,
   defaultChoices,
   type ExtractedBundle,
   type ImportChoice,
@@ -56,7 +57,7 @@ export function ImportAccounts({
           autoCorrect="off"
           spellCheck={false}
           maxLength={10 * 1024 * 1024}
-          placeholder="Pega aquí el código que comienza con MCUENTAS1: o el JSON completo"
+          placeholder="Pega aquí la respuesta JSON de tu ChatGPT o el código MCUENTAS1: recibido"
           onChange={(e) => {
             setPastedText(e.target.value);
             setBundle(null);
@@ -64,8 +65,9 @@ export function ImportAccounts({
           }}
         />
         <small>
-          En Mac: copia el bloque del chat, haz clic en este cuadro y presiona
-          ⌘V. Luego revisa las cuentas antes de importarlas.
+          En Mac: copia el bloque JSON de ChatGPT, haz clic en este cuadro y
+          presiona ⌘V. También se aceptan bloques con ```json. Luego revisa las
+          cuentas antes de importarlas.
         </small>
         <button
           className="button"
@@ -82,9 +84,7 @@ export function ImportAccounts({
             } catch (e) {
               setError(
                 "No se pudieron leer los datos pegados. Copia el bloque completo y vuelve a intentar. " +
-                  ((e as Error).message.includes("navegador")
-                    ? (e as Error).message
-                    : ""),
+                  importErrorMessage(e),
               );
             } finally {
               setReading(false);
@@ -116,9 +116,11 @@ export function ImportAccounts({
               const next = parseExtracted(await file.text());
               setBundle(next);
               setChoices(defaultChoices(state, next));
-            } catch {
+            } catch (e) {
               setError(
-                "No se pudo leer el paquete. Usa el archivo «mis-cuentas-importacion.json»; el JSON de extracción anterior y las copias de seguridad tienen otro formato. Los datos actuales se conservaron.",
+                "No se pudo leer el paquete. " +
+                  importErrorMessage(e) +
+                  " Los datos actuales se conservaron.",
               );
             }
           }}

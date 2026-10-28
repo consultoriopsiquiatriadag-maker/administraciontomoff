@@ -154,3 +154,73 @@ test("pegar código desde el chat evita archivos y exige revisión antes de impo
     1,
   );
 });
+
+test("prompt copiable y respuesta mensual JSON con revisión", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Configuración", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Preparar un resumen con mi ChatGPT" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Copiar prompt para mi ChatGPT" })
+    .click();
+  await expect(
+    page.getByText(
+      "Prompt copiado. Pégalo en tu ChatGPT y adjunta el resumen.",
+    ),
+  ).toBeVisible();
+  const prompt = await page.evaluate(() => navigator.clipboard.readText());
+  expect(prompt).toContain("mis-cuentas-extracted");
+  expect(prompt).toContain("ENTERO EN CENTAVOS");
+  const b = fixture();
+  await page
+    .getByLabel("Pegar código de tus cuentas")
+    .fill("```json\n" + JSON.stringify(b) + "\n```");
+  await page.getByRole("button", { name: "Revisar datos pegados" }).click();
+  await page
+    .getByRole("button", { name: "Importar 1 cuentas seleccionadas" })
+    .click();
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Configuración", exact: true })
+    .click();
+  await page
+    .getByLabel("Cuenta para el prompt")
+    .selectOption({ label: "Cuenta de prueba" });
+  await page.getByText("Ver o copiar el prompt completo").click();
+  await expect(
+    page.getByLabel("Prompt de extracción de resúmenes"),
+  ).toContainText("test-account");
+  const next = structuredClone(b);
+  next.accounts[0].statement.month = "2026-11";
+  next.accounts[0].statement.closingDate = "2026-11-10";
+  next.accounts[0].statement.dueDate = "2026-11-25";
+  next.accounts[0].expenses[0].installmentCurrent = 3;
+  await page
+    .getByLabel("Pegar código de tus cuentas")
+    .fill("```json\n" + JSON.stringify(next) + "\n```");
+  await page.getByRole("button", { name: "Revisar datos pegados" }).click();
+  await page
+    .getByRole("button", { name: "Importar 1 cuentas seleccionadas" })
+    .click();
+  await expect(page.getByLabel("Mes y año")).toHaveValue("2026-11");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Mis tarjetas", exact: true })
+    .click();
+  await expect(page.locator(".card-panel")).toHaveCount(1);
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Cuotas futuras", exact: true })
+    .click();
+  await expect(
+    page.getByRole("cell", { name: "Compra ficticia", exact: true }),
+  ).toHaveCount(1);
+});
