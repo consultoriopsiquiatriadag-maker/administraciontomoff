@@ -43,3 +43,9 @@ La versión de datos y de las nuevas copias es **2**. Las bases y copias de vers
 El archivo `mis-cuentas-importacion.json` usa su propio formato `mis-cuentas-extracted` versión 1. No es un backup y no debe elegirse en Importar copia de seguridad. Los antiguos archivos de extracción para revisión tampoco son el paquete importable: usa el archivo preparado para esta función.
 
 Los paquetes y las copias contienen información financiera sin cifrar. Guárdalos fuera de GitHub. La selección de archivo, la revisión y la escritura en IndexedDB ocurren dentro del navegador; no hay un endpoint que reciba esos datos.
+
+## Usar el código del chat sin descargar archivos (Mac)
+
+En Configuración → Importar cuentas extraídas encontrarás **Sin descargar archivos**. Copia el bloque que empieza con `MCUENTAS1:` desde el chat y pégalo en **Pegar código de tus cuentas** (⌘V en Mac). Pulsa **Revisar datos pegados** y confirma las cuentas en la tabla antes de importarlas.
+
+El código es el mismo paquete de datos, comprimido para facilitar la copia; no es una dirección web ni ejecuta instrucciones. Se decodifica y valida dentro del navegador, sin enviarlo a un servicio. Requiere una versión actual de Safari, Chrome o Firefox con DecompressionStream. También se acepta pegar el JSON completo. Se conservan los límites de tamaño y todas las comprobaciones de integridad y duplicados. Si el código está incompleto no se guardan cambios. Después de leerlo correctamente, el cuadro de texto se limpia y los datos quedan en la revisión hasta que confirmes la importación.

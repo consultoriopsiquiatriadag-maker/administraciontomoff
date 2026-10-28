@@ -95,3 +95,5 @@ La versión 2 agrega **Configuración → Importar cuentas extraídas**, con rev
 El selector de moneda permite consultar ARS y USD por separado. Los pagos y presupuestos para tarjetas también se separan. Los servicios siguen en pesos. Un mínimo desconocido permanece vacío, con modalidad pendiente; para confirmar pago total debes seleccionar esa opción expresamente. Los resúmenes importados necesitan revisar los pagos posteriores al cierre antes de generar un plan.
 
 Consulta el [paso a paso de importación, revisión y compatibilidad](docs/IMPORTACION-CUENTAS.md). Las copias nuevas tienen versión 2; se aceptan las de versión 1 y se migran sin cambiar los importes existentes.
+
+También puedes importar **sin manejar archivos**: en Configuración → Importar cuentas extraídas, pega el código `MCUENTAS1:` recibido en el chat y pulsa **Revisar datos pegados**. La carga mantiene la misma revisión previa y las mismas protecciones contra duplicados; en Mac puedes pegar con ⌘V. El código y los datos se procesan localmente en el navegador.

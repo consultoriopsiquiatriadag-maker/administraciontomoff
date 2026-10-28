@@ -122,3 +122,35 @@ test("importación revisada, monedas separadas, mínimo desconocido y pagos conf
   ).toContainText("15,00");
   expect(errors).toEqual([]);
 });
+
+test("pegar código desde el chat evita archivos y exige revisión antes de importar", async ({
+  page,
+}) => {
+  const { gzipSync } = await import("node:zlib");
+  const code =
+    "MCUENTAS1:" + gzipSync(JSON.stringify(fixture())).toString("base64");
+  await page.goto("/");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Configuración", exact: true })
+    .click();
+  await page
+    .getByLabel("Pegar código de tus cuentas")
+    .fill("MCUENTAS1:incompleto");
+  await page.getByRole("button", { name: "Revisar datos pegados" }).click();
+  await expect(page.getByRole("alert")).toContainText("No se pudieron leer");
+  await page.getByLabel("Pegar código de tus cuentas").fill(code);
+  await page.getByRole("button", { name: "Revisar datos pegados" }).click();
+  await expect(page.getByText("Revisar antes de importar")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Configuración",
+  );
+  await expect(page.getByLabel("Pegar código de tus cuentas")).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Importar 1 cuentas seleccionadas" })
+    .click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Resúmenes");
+  await expect(page.getByRole("button", { name: "Abrir resumen" })).toHaveCount(
+    1,
+  );
+});

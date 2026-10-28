@@ -3,6 +3,7 @@ import { Upload } from "lucide-react";
 import { currency, dateLabel } from "./finance";
 import {
   parseExtracted,
+  parseExtractedText,
   defaultChoices,
   type ExtractedBundle,
   type ImportChoice,
@@ -19,16 +20,19 @@ export function ImportAccounts({
   const [bundle, setBundle] = useState<ExtractedBundle | null>(null),
     [choices, setChoices] = useState<ImportChoice[]>([]),
     [error, setError] = useState(""),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [pastedText, setPastedText] = useState(""),
+    [reading, setReading] = useState(false);
   const update = (key: string, patch: Partial<ImportChoice>) =>
     setChoices((xs) => xs.map((c) => (c.key === key ? { ...c, ...patch } : c)));
   return (
     <section className="panel import-accounts">
       <h2>Importar cuentas extraídas</h2>
       <p>
-        Selecciona el paquete de importación preparado a partir de tus
-        resúmenes. Primero podrás revisar cada cuenta, sus monedas y la tarjeta
-        de destino. Los datos permanecen en este navegador.
+        Pega los datos recibidos en el chat o selecciona el paquete de
+        importación preparado a partir de tus resúmenes. Primero podrás revisar
+        cada cuenta, sus monedas y la tarjeta de destino. Los datos permanecen
+        en este navegador.
       </p>
       <p className="muted">
         Esta carga agrega cuentas y resúmenes. Los registros existentes del
@@ -41,6 +45,56 @@ export function ImportAccounts({
           antes de importar tus cuentas reales.
         </p>
       )}
+      <div className="paste-import">
+        <h3>Sin descargar archivos</h3>
+        <label htmlFor="account-import-code">Pegar código de tus cuentas</label>
+        <textarea
+          id="account-import-code"
+          value={pastedText}
+          disabled={saving || reading || state.demo}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={10 * 1024 * 1024}
+          placeholder="Pega aquí el código que comienza con MCUENTAS1: o el JSON completo"
+          onChange={(e) => {
+            setPastedText(e.target.value);
+            setBundle(null);
+            setError("");
+          }}
+        />
+        <small>
+          En Mac: copia el bloque del chat, haz clic en este cuadro y presiona
+          ⌘V. Luego revisa las cuentas antes de importarlas.
+        </small>
+        <button
+          className="button"
+          disabled={saving || reading || state.demo || !pastedText.trim()}
+          onClick={async () => {
+            setReading(true);
+            setError("");
+            setBundle(null);
+            try {
+              const next = await parseExtractedText(pastedText);
+              setBundle(next);
+              setChoices(defaultChoices(state, next));
+              setPastedText("");
+            } catch (e) {
+              setError(
+                "No se pudieron leer los datos pegados. Copia el bloque completo y vuelve a intentar. " +
+                  ((e as Error).message.includes("navegador")
+                    ? (e as Error).message
+                    : ""),
+              );
+            } finally {
+              setReading(false);
+            }
+          }}
+        >
+          {reading ? "Leyendo…" : "Revisar datos pegados"}
+        </button>
+      </div>
+      <p className="muted">También puedes usar un archivo JSON:</p>
       <label className="button secondary">
         <Upload size={18} />
         Seleccionar paquete de cuentas
@@ -48,13 +102,14 @@ export function ImportAccounts({
           className="file-input"
           type="file"
           accept="application/json,.json"
-          disabled={saving || state.demo}
+          disabled={saving || reading || state.demo}
           onChange={async (e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
             if (!file) return;
             setError("");
             setBundle(null);
+            setPastedText("");
             try {
               if (file.size > 10 * 1024 * 1024)
                 throw Error("El paquete supera 10 MB");

@@ -196,3 +196,49 @@ export function mergeExtracted(
   }
   return { state: validateState(n), added, skipped };
 }
+
+/** Clipboard-only import. Decoding stays in the browser and uses no remote service. */
+export async function parseExtractedText(
+  input: string,
+): Promise<ExtractedBundle> {
+  const raw = input.trim();
+  if (raw.length > 10 * 1024 * 1024) throw Error("El texto supera 10 MB.");
+  if (!raw.startsWith("MCUENTAS1:")) return parseExtracted(raw);
+  const encoded = raw.slice("MCUENTAS1:".length).replace(/\s/g, "");
+  if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))
+    throw Error("El código está incompleto o no es válido.");
+  if (typeof DecompressionStream === "undefined")
+    throw Error(
+      "Este navegador no admite el código compacto. Usa una versión actual de Safari, Chrome o Firefox, o pega el JSON completo.",
+    );
+  const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
+  const reader = new Blob([bytes])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"))
+    .getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 10 * 1024 * 1024) {
+        await reader.cancel();
+        throw Error("Los datos descomprimidos superan 10 MB.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const decoded = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    decoded.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return parseExtracted(
+    new TextDecoder("utf-8", { fatal: true }).decode(decoded),
+  );
+}

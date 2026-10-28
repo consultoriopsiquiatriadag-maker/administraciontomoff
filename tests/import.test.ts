@@ -173,3 +173,29 @@ describe("monedas y obligaciones desconocidas", () => {
     expect(migrated.version).toBe(2);
   });
 });
+
+describe("importación por texto sin archivos", () => {
+  it("acepta el JSON completo pegado", async () => {
+    const { parseExtractedText } = await import("../src/importAccounts");
+    const b = fixture();
+    expect(await parseExtractedText(JSON.stringify(b))).toEqual(b);
+  });
+  it("decodifica el código compacto y conserva importes y monedas", async () => {
+    const { parseExtractedText } = await import("../src/importAccounts");
+    const { gzipSync } = await import("node:zlib");
+    const b = fixture();
+    const encoded =
+      "MCUENTAS1:" + gzipSync(JSON.stringify(b)).toString("base64");
+    expect(await parseExtractedText(encoded)).toEqual(b);
+  });
+  it("rechaza códigos truncados o datos comprimidos de otro formato", async () => {
+    const { parseExtractedText } = await import("../src/importAccounts");
+    const { gzipSync } = await import("node:zlib");
+    await expect(
+      parseExtractedText("MCUENTAS1:not-a-valid-code"),
+    ).rejects.toThrow();
+    await expect(
+      parseExtractedText("MCUENTAS1:" + gzipSync("{}").toString("base64")),
+    ).rejects.toThrow();
+  });
+});
