@@ -65,7 +65,7 @@ export async function readAttachments() {
   }
 }
 export async function saveState(s: State, attachments?: Attachment[]) {
-  validateState(s);
+  s = validateState(s);
   const db = await openDB();
   try {
     const t = db.transaction(["state", "attachments"], "readwrite");
@@ -165,7 +165,7 @@ export async function exportBackup() {
     attachments = await readAttachments();
   return JSON.stringify({
     format: "mis-cuentas",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     state,
     attachments: await Promise.all(
@@ -181,7 +181,7 @@ export async function exportBackup() {
 }
 const backupSchema = z.object({
   format: z.literal("mis-cuentas"),
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   state: z.unknown(),
   attachments: z
     .array(

@@ -1539,3 +1539,48 @@ dialog form {
 .bank-card .bank-logo {
   color: #526e81;
 }
+
+.currency-picker {
+  font-size: 10px;
+  color: #6b8191;
+  line-height: 1.2;
+}
+.currency-picker select {
+  font-size: 12px;
+  padding: 7px;
+  min-height: 36px;
+  margin-top: 4px;
+}
+.currency-notice {
+  font-size: 12px;
+  color: #647e8b;
+  margin-bottom: 18px;
+}
+.import-accounts p {
+  font-size: 14px;
+}
+.import-review-title {
+  margin-top: 25px;
+}
+.import-accounts table {
+  min-width: 1000px;
+}
+.import-accounts select {
+  max-width: 260px;
+  font-size: 12px;
+}
+.import-warnings {
+  min-width: 220px;
+  max-width: 340px;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #836c3c;
+}
+@media (max-width: 760px) {
+  .currency-picker {
+    min-width: 122px;
+  }
+  .topbar-actions {
+    flex-wrap: wrap;
+  }
+}

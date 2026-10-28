@@ -29,7 +29,7 @@ const money = (name: string, label: string): Field => ({
   name,
   label,
   type: "money",
-  help: "Pesos, sin separador de miles. Ej.: 125000,50",
+  help: "Importe en la moneda indicada, sin separador de miles. Ej.: 125000,50",
 });
 const notes: Field = {
   name: "notes",
@@ -60,7 +60,8 @@ export function fieldsFor(
         {
           name: "last4",
           label: "Últimos 4 dígitos",
-          help: "Nunca ingreses el número completo, CVV, PIN ni claves.",
+          required: false,
+          help: "Deja vacío si no conoces los últimos cuatro de la tarjeta. Nunca ingreses número completo, CVV, PIN ni claves.",
         },
         {
           name: "closingDay",
@@ -89,6 +90,12 @@ export function fieldsFor(
           required: false,
           help: "Ingresa TEM mensual. No ingreses TNA ni TEA sin convertir.",
         },
+        {
+          name: "financingRateUSD",
+          label: "Financiación mensual USD (%)",
+          type: "rate",
+          required: false,
+        },
         notes,
       ];
     case "statements":
@@ -104,7 +111,21 @@ export function fieldsFor(
         money("other", "Otros cargos"),
         money("previousPayments", "Pagos descontados por el banco"),
         money("total", "Total del resumen (dato real)"),
-        money("minimum", "Pago mínimo"),
+        {
+          ...money("minimum", "Pago mínimo ARS informado"),
+          type: "nullableMoney",
+          required: false,
+          help: "Vacío significa no informado; no se interpreta como cero.",
+        },
+        {
+          name: "paymentMode",
+          label: "Modalidad de pago ARS",
+          options: [
+            { value: "minimum", label: "Mínimo informado" },
+            { value: "full", label: "Pago total exigible (confirmado)" },
+            { value: "unknown", label: "Pendiente de confirmar" },
+          ],
+        },
         {
           name: "rate",
           label: "Financiación mensual TEM (%)",
@@ -112,6 +133,34 @@ export function fieldsFor(
           required: false,
           help: "Si falta, se usa la tasa de financiación de la tarjeta. Nunca se inventa.",
         },
+        money("totalUSD", "Saldo en dólares (USD)"),
+        {
+          ...money("minimumUSD", "Mínimo en dólares informado"),
+          type: "nullableMoney",
+          required: false,
+          help: "Vacío significa no informado. No se convierte con una cotización supuesta.",
+        },
+        {
+          name: "usdPaymentMode",
+          label: "Modalidad de pago USD",
+          options: [
+            { value: "unknown", label: "Pendiente de confirmar" },
+            { value: "minimum", label: "Mínimo USD informado" },
+            { value: "full", label: "Pago total USD exigible (confirmado)" },
+          ],
+        },
+        {
+          name: "rateUSD",
+          label: "TEM de financiación USD (%)",
+          type: "rate",
+          required: false,
+        },
+        money("previousUSD", "Saldo anterior en USD"),
+        money("consumptionUSD", "Consumos informados en USD"),
+        money("interestUSD", "Intereses en USD"),
+        money("taxesUSD", "Impuestos en USD"),
+        money("otherUSD", "Otros cargos en USD"),
+        money("previousPaymentsUSD", "Pagos descontados por el banco en USD"),
         notes,
       ];
     case "expenses":
@@ -119,6 +168,11 @@ export function fieldsFor(
         { name: "date", label: "Fecha", type: "date" },
         { name: "description", label: "Comercio / descripción" },
         money("amount", "Importe"),
+        {
+          name: "currency",
+          label: "Moneda del consumo",
+          options: opts(["ARS", "USD"]),
+        },
         { name: "category", label: "Categoría", options: opts(categories) },
         {
           name: "installmentCurrent",
@@ -178,11 +232,21 @@ export function fieldsFor(
           max: 600,
         },
         money("amount", "Valor de cada cuota"),
+        {
+          name: "currency",
+          label: "Moneda de las cuotas",
+          options: opts(["ARS", "USD"]),
+        },
       ];
     case "payments":
       return [
         { name: "date", label: "Fecha del pago", type: "date" },
         money("amount", "Importe efectivamente pagado"),
+        {
+          name: "currency",
+          label: "Moneda del pago",
+          options: opts(["ARS", "USD"]),
+        },
         { name: "method", label: "Medio de pago", required: false },
       ];
     case "services":
@@ -232,7 +296,11 @@ export function fieldsFor(
     case "budgets":
       return [
         money("income", "Ingresos del mes"),
-        money("cardBudget", "Dinero disponible para tarjetas"),
+        money("cardBudget", "Dinero disponible para tarjetas ARS"),
+        money(
+          "cardBudgetUSD",
+          "Dinero disponible en dólares para tarjetas USD",
+        ),
         money("other", "Otros gastos del mes"),
       ];
   }

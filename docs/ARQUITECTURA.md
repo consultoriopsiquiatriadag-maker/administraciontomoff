@@ -74,7 +74,7 @@ IndexedDB `mis-cuentas-local`, versión 1, tiene almacenes `state` y `attachment
 
 Las acciones leen el estado más reciente bajo Web Locks para serializar las escrituras entre pestañas del mismo origen. BroadcastChannel informa las modificaciones de registros a otras pestañas. Conviene trabajar en una única pestaña para no tener formularios con datos anteriores a una edición realizada en otra pestaña.
 
-La copia tiene `format`, `version`, fecha de exportación, `state` y documentos base64. La versión permite agregar migraciones explícitas en futuras versiones; hoy se acepta solo versión 1. La base es local y no está cifrada. El navegador puede retirar almacenamiento, por eso la copia portable es esencial.
+La copia tiene `format`, `version`, fecha de exportación, `state` y documentos base64. La versión permite agregar migraciones explícitas en futuras versiones; la app acepta copias de versiones 1 y 2, y genera versión 2. La base es local y no está cifrada. El navegador puede retirar almacenamiento, por eso la copia portable es esencial.
 
 ## Extensiones previstas
 
@@ -87,3 +87,11 @@ La copia tiene `format`, `version`, fecha de exportación, `state` y documentos 
 ## Logos locales por emisor
 
 `src/banks.ts` normaliza nombres equivalentes y asigna un propietario estable `bank-logo:<emisor>`. `src/BankLogo.tsx` muestra el Blob local mediante una URL temporal, que se libera cuando deja de usarse. La carga admite PNG/JPG hasta 2 MB y reemplaza el logo anterior del emisor en una transacción; no requiere una migración de los registros financieros. Los logos se guardan en el almacén existente de adjuntos, se incluyen en las copias y se conservan mientras exista al menos una tarjeta de ese emisor. Sin imagen, se mantiene un ícono genérico y el nombre textual. No se realizan descargas de imágenes al usar la aplicación.
+
+## Datos v2, importación y separación de monedas
+
+La forma física de IndexedDB se conserva, con datos versionados en 2. `validateState` migra entradas de versión 1 cambiando únicamente el número de versión. Los campos USD son opcionales y los registros antiguos sin moneda son ARS; nunca se reemplazan tasas o importes de una moneda por los de otra. Las copias v2 son rechazadas por la app antigua, evitando perder USD por una importación silenciosa.
+
+`src/importAccounts.ts` valida el paquete `mis-cuentas-extracted`, resuelve destinos y fusiona aditivamente. La interfaz `src/ImportAccounts.tsx` permite revisar la carga. Las claves estables distinguen cuentas, resúmenes y compras importados; se conservan los resúmenes existentes y todos sus pagos y documentos. Los consumos en cuotas crean su compra vinculada sin crear consumos futuros. Los identificadores parciales de cuenta o socio se distinguen de los últimos cuatro reales de tarjeta; un número desconocido no se inventa.
+
+`requiredPayment` devuelve un importe o `null`. La modalidad de pago total confirmada permite exigir el saldo sin modificar el mínimo documental nulo. Los nuevos registros importados tienen `paymentsConfirmed=false`; el motor devuelve un plan bloqueado sin asignaciones si queda alguna obligación o pago sin revisar en esa moneda. Los importes de pagos anteriores descontados por el banco se conservan como conciliación, no se convierten en nuevos registros Payment.

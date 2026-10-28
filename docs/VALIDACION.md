@@ -34,3 +34,7 @@ No se ha validado un instalador PWA/escritorio ni el lanzador en Windows real. N
 La comprobación de navegador también ejercita la creación automática de una compra 3/12 desde un consumo, corrección de registros y eliminación en cascada. Los resultados son de este entorno Linux; no equivalen a una prueba en Windows.
 
 Actualización de logos: compilación correcta, **25 pruebas unitarias/de persistencia** y **4 recorridos de navegador contra producción** aprobados. Se verificaron alias de emisor, reemplazo único de logo, conservación mientras quede otra tarjeta, restauración binaria en copias, rechazo de PDF/SVG como logo y visualización tras recargar.
+
+Versión 2: compilación correcta, **39 pruebas unitarias/de persistencia** y **5 recorridos de navegador contra producción** aprobados. Se verificaron la migración de bases y backups v1, restauración de USD y mínimos nulos, importación aditiva sin duplicados, elección de tarjeta existente, separación de pagos/presupuestos ARS y USD, bloqueo del plan por obligaciones o pagos sin confirmar, y conservación de ingresos ARS en un informe consultado en USD. La auditoría de dependencias de producción no detectó vulnerabilidades en esta actualización.
+
+El paquete privado de la sesión se validó fuera del checkout: cinco cuentas y 49 consumos, totales por moneda coincidentes con la extracción, sin crear pagos previos otra vez ni inventar mínimos. Ese archivo y sus importes no forman parte del repositorio publicado.

@@ -17,7 +17,7 @@ test("flujo real: alta, pagos, cuotas, servicios, persistencia y copia con docum
   await dialog.getByLabel("Banco / emisor").fill("Banco de prueba");
   await dialog.getByLabel("Nombre de la tarjeta").fill("Visa de prueba");
   await dialog.getByLabel("Últimos 4 dígitos").fill("1234");
-  await dialog.getByLabel("Financiación mensual").fill("7,5");
+  await dialog.locator("[name=financingRate]").fill("7,5");
   await dialog.getByRole("button", { name: "Guardar", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await page
@@ -153,7 +153,7 @@ test("flujo real: alta, pagos, cuotas, servicios, persistencia y copia con docum
     .getByRole("button", { name: "Configuración" })
     .click();
   page.once("dialog", (d) => d.accept());
-  await page.locator("input[type=file]").setInputFiles({
+  await page.getByLabel("Importar copia de seguridad").setInputFiles({
     name: "backup.json",
     mimeType: "application/json",
     buffer: Buffer.from(raw),
@@ -333,16 +333,14 @@ test("logos locales compartidos por banco, persistencia y respaldo", async ({
     await dialog.getByRole("button", { name: "Guardar", exact: true }).click();
     await expect(dialog).not.toBeVisible();
   }
-  await page
-    .getByLabel("Logo de Banco Macro", { exact: true })
-    .setInputFiles({
-      name: "logo-prueba.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    });
+  await page.getByLabel("Logo de Banco Macro", { exact: true }).setInputFiles({
+    name: "logo-prueba.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
   await expect(page.locator(".bank-logo img")).toHaveCount(2);
   expect(
     await page

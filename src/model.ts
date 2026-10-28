@@ -1,4 +1,7 @@
 import { z } from "zod";
+export const currencySchema = z.enum(["ARS", "USD"]);
+export type Currency = z.infer<typeof currencySchema>;
+const paymentMode = z.enum(["minimum", "full", "unknown"]);
 const id = z.string().min(1).max(100);
 const text = z.string().max(2000);
 const money = z.number().int().min(0).max(1e14);
@@ -19,11 +22,18 @@ export const cardSchema = z.object({
   bank: text,
   name: text,
   brand: z.enum(["Visa", "Mastercard", "American Express", "Otra"]),
-  last4: z.string().regex(/^\d{4}$/),
+  last4: z.string().regex(/^(?:\d{4})?$/),
+  referenceLast4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
+  referenceKind: z.enum(["account", "member"]).optional(),
+  importKey: text.optional(),
   closingDay: z.number().int().min(1).max(31),
   dueDay: z.number().int().min(1).max(31),
   interestRate: rate,
   financingRate: rate,
+  financingRateUSD: rate.optional(),
   notes: text,
 });
 export const statementSchema = z.object({
@@ -39,7 +49,21 @@ export const statementSchema = z.object({
   other: money,
   previousPayments: money,
   total: money,
-  minimum: money,
+  minimum: money.nullable(),
+  paymentMode: paymentMode.optional(),
+  usdPaymentMode: paymentMode.optional(),
+  totalUSD: money.optional(),
+  minimumUSD: money.nullable().optional(),
+  previousUSD: money.optional(),
+  consumptionUSD: money.optional(),
+  interestUSD: money.optional(),
+  taxesUSD: money.optional(),
+  otherUSD: money.optional(),
+  previousPaymentsUSD: money.optional(),
+  rateUSD: rate.optional(),
+  importKey: text.optional(),
+  source: text.optional(),
+  paymentsConfirmed: z.boolean().optional(),
   rate,
   notes: text,
 });
@@ -49,6 +73,8 @@ export const expenseSchema = z.object({
   date,
   description: text,
   amount: money,
+  currency: currencySchema.optional(),
+  importKey: text.optional(),
   category: text,
   notes: text,
   purchaseId: z.union([id, z.literal("")]),
@@ -62,9 +88,13 @@ export const purchaseSchema = z
     current: z.number().int().min(1).max(600),
     total: z.number().int().min(1).max(600),
     amount: money,
+    currency: currencySchema.optional(),
+    importKey: text.optional(),
   })
   .refine((v) => v.current <= v.total, "Cuota actual superior al total");
 export const paymentSchema = z.object({
+  currency: currencySchema.optional(),
+  importKey: text.optional(),
   id,
   statementId: id,
   date,
@@ -98,9 +128,10 @@ export const budgetSchema = z.object({
   income: money,
   other: money,
   cardBudget: money,
+  cardBudgetUSD: money.optional(),
 });
 export const stateSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   demo: z.boolean(),
   cards: z.array(cardSchema),
   statements: z.array(statementSchema),
@@ -122,7 +153,7 @@ export type Budget = z.infer<typeof budgetSchema>;
 export type State = z.infer<typeof stateSchema>;
 export type Table = Exclude<keyof State, "version" | "demo">;
 export const emptyState = (): State => ({
-  version: 1,
+  version: 2,
   demo: false,
   cards: [],
   statements: [],
@@ -140,7 +171,12 @@ export const today = () => {
 };
 export const currentMonth = () => today().slice(0, 7);
 export function validateState(input: unknown): State {
-  const s = stateSchema.parse(input);
+  const legacy =
+    input &&
+    typeof input === "object" &&
+    "version" in input &&
+    input.version === 1;
+  const s = stateSchema.parse(legacy ? { ...input, version: 2 } : input);
   const has = (table: Table, id: string) => s[table].some((x) => x.id === id);
   for (const table of [
     "cards",
@@ -168,6 +204,14 @@ export function validateState(input: unknown): State {
           s.statements.find((st) => st.id === row.statementId)!.cardId)
     )
       throw Error("Compra en cuotas incompatible");
+  for (const row of s.expenses) {
+    if (
+      row.purchaseId &&
+      (s.purchases.find((p) => p.id === row.purchaseId)?.currency ?? "ARS") !==
+        (row.currency ?? "ARS")
+    )
+      throw Error("La moneda del consumo no coincide con la compra en cuotas");
+  }
   for (const row of s.invoices)
     if (!has("services", row.serviceId)) throw Error("Servicio inexistente");
   for (const [rows, key] of [
@@ -180,14 +224,29 @@ export function validateState(input: unknown): State {
       throw Error("Ya existe un registro para ese período");
   }
   for (const st of s.statements) {
-    if (st.minimum > st.total)
+    if (st.minimum !== null && st.minimum > st.total)
       throw Error("El mínimo no puede superar el total");
     if (
-      s.payments
-        .filter((p) => p.statementId === st.id)
-        .reduce((a, p) => a + p.amount, 0) > st.total
+      st.minimumUSD !== null &&
+      st.minimumUSD !== undefined &&
+      st.minimumUSD > (st.totalUSD ?? 0)
     )
-      throw Error("Los pagos superan el total del resumen");
+      throw Error("El mínimo USD supera el total USD");
+    if (st.paymentMode === "minimum" && st.minimum === null)
+      throw Error("La modalidad mínimo requiere un importe ARS informado");
+    if (st.usdPaymentMode === "minimum" && st.minimumUSD == null)
+      throw Error("La modalidad mínimo requiere un importe USD informado");
+    for (const unit of ["ARS", "USD"] as const) {
+      const total = unit === "ARS" ? st.total : (st.totalUSD ?? 0);
+      if (
+        s.payments
+          .filter(
+            (p) => p.statementId === st.id && (p.currency ?? "ARS") === unit,
+          )
+          .reduce((a, p) => a + p.amount, 0) > total
+      )
+        throw Error(`Los pagos ${unit} superan el total del resumen`);
+    }
   }
   return s;
 }

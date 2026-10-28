@@ -145,3 +145,45 @@ describe("logos de bancos", () => {
     ).rejects.toThrow("PNG o JPG");
   });
 });
+
+describe("copias con monedas y migración", () => {
+  it("restaura saldos USD, mínimo nulo y pagos por moneda desde una copia v2", async () => {
+    const s = demoState("2026-10"),
+      st = s.statements[0];
+    st.totalUSD = 20000;
+    st.minimum = null;
+    st.paymentMode = "full";
+    st.usdPaymentMode = "full";
+    st.paymentsConfirmed = true;
+    s.payments.push({
+      id: "usd-payment",
+      statementId: st.id,
+      date: "2026-10-20",
+      amount: 5000,
+      currency: "USD",
+      method: "Prueba",
+    });
+    const raw = JSON.stringify({
+      format: "mis-cuentas",
+      version: 2,
+      state: s,
+      attachments: [],
+    });
+    const backup = await parseBackup(raw);
+    await saveState(backup.state, backup.attachments);
+    expect(await readState()).toEqual(s);
+  });
+  it("importa backup v1 y conserva importes ARS al migrar a v2", async () => {
+    const s = demoState("2026-10");
+    const backup = await parseBackup(
+      JSON.stringify({
+        format: "mis-cuentas",
+        version: 1,
+        state: { ...s, version: 1 },
+        attachments: [],
+      }),
+    );
+    await saveState(backup.state, backup.attachments);
+    expect(await readState()).toEqual(s);
+  });
+});

@@ -1,3 +1,5 @@
+import { ImportAccounts } from "./ImportAccounts";
+import { mergeExtracted } from "./importAccounts";
 import { BankLogo } from "./BankLogo";
 import { bankLogoOwner } from "./banks";
 import { fieldsFor } from "./forms";
@@ -36,20 +38,24 @@ import {
   uid,
   validateState,
   type State,
+  type Currency,
+  type Card,
   type Table as TableName,
   type Statement,
 } from "./model";
 import {
   addMonth,
-  currency,
+  currency as formatCurrency,
   dateLabel,
   monthLabel,
   status,
   daysUntil,
-  paid,
-  balance,
-  effectiveRate,
+  paid as paidIn,
+  balance as balanceIn,
+  effectiveRate as effectiveRateIn,
   overview,
+  statementValue,
+  requiredPayment,
   paymentPlan,
   projection,
   estimate,
@@ -86,6 +92,7 @@ export default function App() {
     [notice, setNotice] = useState(""),
     [month, setMonth] = useState(currentMonth()),
     [page, setPage] = useState("home"),
+    [selectedCurrency, setSelectedCurrency] = useState<Currency>("ARS"),
     [editing, setEditing] = useState<Editing | null>(null),
     [detail, setDetail] = useState(""),
     [attachments, setAttachments] = useState<Attachment[]>([]),
@@ -145,8 +152,21 @@ export default function App() {
       table,
       row:
         table === "expenses"
-          ? { installmentCurrent: 1, installmentTotal: 1, ...row }
-          : row,
+          ? {
+              currency: unit,
+              installmentCurrent: 1,
+              installmentTotal: 1,
+              ...row,
+            }
+          : table === "payments" || table === "purchases"
+            ? { currency: unit, ...row }
+            : table === "statements"
+              ? {
+                  paymentMode: row.minimum == null ? "unknown" : "minimum",
+                  usdPaymentMode: "unknown",
+                  ...row,
+                }
+              : row,
       title,
     });
   const go = (next: string) => {
@@ -167,10 +187,28 @@ export default function App() {
         )}
       </div>
     );
-  const o = overview(s, month),
+  const unit: Currency = page === "services" ? "ARS" : selectedCurrency;
+  const currency = (n: number | null | undefined) =>
+    n == null ? "No informado" : formatCurrency(n, unit);
+  const paid = (state: State, id: string) => paidIn(state, id, unit);
+  const balance = (state: State, st: Statement) => balanceIn(state, st, unit);
+  const effectiveRate = (state: State, st: Statement) =>
+    effectiveRateIn(state, st, unit);
+  const value = (st: Statement, key: Parameters<typeof statementValue>[1]) =>
+    statementValue(st, key, unit);
+  const minimum = (st: Statement) =>
+    unit === "ARS" ? st.minimum : st.minimumUSD;
+  const identifier = (c: Card) =>
+    c.last4
+      ? "•••• " + c.last4
+      : c.referenceLast4
+        ? `${c.referenceKind === "member" ? "Socio" : "Cuenta"} •••• ${c.referenceLast4} · tarjeta por confirmar`
+        : "Terminación por confirmar";
+  const o = overview(s, month, unit),
     budget = s.budgets.find((x) => x.month === month),
-    available = budget?.cardBudget ?? 0,
-    plan = paymentPlan(s, month, available, strategy);
+    available =
+      unit === "ARS" ? (budget?.cardBudget ?? 0) : (budget?.cardBudgetUSD ?? 0),
+    plan = paymentPlan(s, month, available, strategy, unit);
   const cardName = (id: string) =>
     s.cards.find((c) => c.id === id)?.name ?? "Tarjeta";
   const serviceName = (id: string) =>
@@ -209,6 +247,10 @@ export default function App() {
         previousPayments: 0,
         total: 0,
         minimum: 0,
+        paymentMode: "minimum",
+        totalUSD: 0,
+        minimumUSD: null,
+        usdPaymentMode: "unknown",
         rate: null,
         notes: "",
       },
@@ -408,19 +450,26 @@ export default function App() {
       </div>
     );
   }
-  const future = projection(s, month);
-  const due = deadlines(s).filter((d) => d.amount > 0 && d.month === month);
-  const monthDue = deadlines(s).filter((d) => d.month === month);
+  const future = projection(s, month, 12, unit);
+  const due = deadlines(s, unit).filter(
+    (d) => d.amount > 0 && d.month === month,
+  );
+  const monthDue = deadlines(s, unit).filter((d) => d.month === month);
 
   const metric = (
     label: string,
-    value: number,
+    value: number | null | undefined,
     sub?: string,
     highlight = false,
+    overrideUnit?: Currency,
   ) => (
     <div className={"metric " + (highlight ? "highlight" : "")}>
       <span>{label}</span>
-      <strong>{currency(value)}</strong>
+      <strong>
+        {overrideUnit && value != null
+          ? formatCurrency(value, overrideUnit)
+          : currency(value)}
+      </strong>
       {sub && <small>{sub}</small>}
     </div>
   );
@@ -444,35 +493,40 @@ export default function App() {
       )
       .reduce((a, st) => a + balance(s, st), 0),
   }));
+  const arsOverview = overview(s, month, "ARS");
   const budgetView = (
     <>
       <div className="budget-list">
         <div>
-          <span>Ingresos</span>
-          <strong>{currency(budget?.income ?? 0)}</strong>
+          <span>Ingresos ARS</span>
+          <strong>{formatCurrency(budget?.income ?? 0)}</strong>
         </div>
         <div>
-          <span>Servicios del mes</span>
-          <strong>− {currency(o.services)}</strong>
+          <span>Servicios ARS</span>
+          <strong>− {formatCurrency(arsOverview.services)}</strong>
         </div>
         <div>
-          <span>Reservado para tarjetas</span>
-          <strong>− {currency(available)}</strong>
+          <span>Reservado para tarjetas ARS</span>
+          <strong>− {formatCurrency(budget?.cardBudget ?? 0)}</strong>
         </div>
         <div>
-          <span>Otros gastos</span>
-          <strong>− {currency(budget?.other ?? 0)}</strong>
+          <span>Otros gastos ARS</span>
+          <strong>− {formatCurrency(budget?.other ?? 0)}</strong>
         </div>
         <div className="budget-total">
-          <span>Disponible después del plan</span>
+          <span>Disponible en pesos después del plan</span>
           <strong>
-            {currency(
+            {formatCurrency(
               (budget?.income ?? 0) -
-                o.services -
-                available -
+                arsOverview.services -
+                (budget?.cardBudget ?? 0) -
                 (budget?.other ?? 0),
             )}
           </strong>
+        </div>
+        <div>
+          <span>Disponible para tarjetas en USD (separado)</span>
+          <strong>{formatCurrency(budget?.cardBudgetUSD ?? 0, "USD")}</strong>
         </div>
       </div>
       <button className="button secondary full" onClick={editBudget}>
@@ -577,7 +631,7 @@ export default function App() {
                         <BankLogo bank={c.bank} attachments={attachments} />
                         <div>
                           <strong>{c.name}</strong>
-                          <small>•••• {c.last4}</small>
+                          <small>{identifier(c)}</small>
                         </div>
                         <div className="align-right">
                           <strong>
@@ -620,7 +674,7 @@ export default function App() {
                 priorizar.
               </p>
               <div>
-                <span>Mínimos aún pendientes</span>
+                <span>Obligaciones conocidas pendientes</span>
                 <strong>{currency(o.minimum)}</strong>
               </div>
               <div>
@@ -629,7 +683,11 @@ export default function App() {
               </div>
               <div>
                 <span>Total recomendado a pagar</span>
-                <strong>{currency(plan.allocated)}</strong>
+                <strong>
+                  {plan.blocked
+                    ? "Requiere revisión"
+                    : currency(plan.allocated)}
+                </strong>
               </div>
               <button className="button" onClick={() => go("plan")}>
                 Armar mi plan de pago <ArrowUpRight size={17} />
@@ -672,7 +730,7 @@ export default function App() {
                   <CreditCard size={27} />
                 </div>
                 <h2>{c.name}</h2>
-                <p>•••• &nbsp; •••• &nbsp; •••• &nbsp; {c.last4}</p>
+                <p>{identifier(c)}</p>
                 <div>
                   <small>Cierre: día {c.closingDay}</small>
                   <strong>{c.brand}</strong>
@@ -685,9 +743,12 @@ export default function App() {
                 <span>
                   Financiación mensual
                   <strong>
-                    {c.financingRate === null
+                    {(unit === "ARS" ? c.financingRate : c.financingRateUSD) ==
+                    null
                       ? "Sin informar"
-                      : c.financingRate + " % TEM"}
+                      : (unit === "ARS"
+                          ? c.financingRate
+                          : c.financingRateUSD) + " % TEM"}
                   </strong>
                 </span>
               </div>
@@ -782,22 +843,62 @@ export default function App() {
           {actions("statements", st, "Editar resumen")}
         </div>
         <div className="metrics">
-          {metric("Total informado", st.total)}
-          {metric("Mínimo informado", st.minimum)}
+          {metric("Total informado", value(st, "total"))}
+          {metric("Mínimo informado", minimum(st))}
           {metric("Pagado", paid(s, st.id))}
           {metric("Saldo pendiente", balance(s, st), undefined, true)}
         </div>
+        {st.paymentsConfirmed === false && (
+          <div className="alert warning">
+            <strong>Pagos posteriores al cierre pendientes de revisar.</strong>
+            <p>
+              Los pagos del documento ya están descontados del total. Registra
+              únicamente pagos posteriores a este cierre; luego confirma que el
+              registro está actualizado.
+            </p>
+            <button
+              className="button secondary"
+              onClick={() => {
+                if (
+                  confirm(
+                    "¿Confirmas que registraste todos los pagos posteriores al cierre, o que no hubo otros pagos?",
+                  )
+                )
+                  safely(
+                    mutate((current) => ({
+                      ...current,
+                      statements: current.statements.map((x) =>
+                        x.id === st.id ? { ...x, paymentsConfirmed: true } : x,
+                      ),
+                    })),
+                  );
+              }}
+            >
+              Confirmar pagos al día
+            </button>
+          </div>
+        )}
+        {balance(s, st) > 0 && requiredPayment(s, st, unit) === null && (
+          <p className="alert warning">
+            No se conoce el mínimo o la modalidad de pago en {unit}. Edita el
+            resumen para ingresar el mínimo informado o confirmar que
+            corresponde pago total. No se supone mínimo cero.
+          </p>
+        )}
         {panel(
           "Detalle del resumen",
           <>
             <div className="detail-grid">
               {[
-                ["Saldo anterior", st.previous],
-                ["Consumos informados", st.consumption],
-                ["Intereses", st.interest],
-                ["Impuestos / cargos", st.taxes],
-                ["Otros cargos", st.other],
-                ["Pagos descontados por el banco", st.previousPayments],
+                ["Saldo anterior", value(st, "previous")],
+                ["Consumos informados", value(st, "consumption")],
+                ["Intereses", value(st, "interest")],
+                ["Impuestos / cargos", value(st, "taxes")],
+                ["Otros cargos", value(st, "other")],
+                [
+                  "Pagos descontados por el banco",
+                  value(st, "previousPayments"),
+                ],
               ].map(([k, v]) => (
                 <div key={k}>
                   <span>{k}</span>
@@ -808,12 +909,12 @@ export default function App() {
             <p className="muted">
               Total calculado de referencia:{" "}
               {currency(
-                st.previous +
-                  st.consumption +
-                  st.interest +
-                  st.taxes +
-                  st.other -
-                  st.previousPayments,
+                value(st, "previous") +
+                  value(st, "consumption") +
+                  value(st, "interest") +
+                  value(st, "taxes") +
+                  value(st, "other") -
+                  value(st, "previousPayments"),
               )}
               . El total informado permanece sin cambios. Los pagos descontados
               por el banco corresponden al período anterior; registra abajo los
@@ -851,7 +952,7 @@ export default function App() {
                     dateLabel(e.date),
                     e.description,
                     p ? `${p.current + delta}/${p.total}` : "—",
-                    currency(e.amount),
+                    formatCurrency(e.amount, e.currency ?? "ARS"),
                     e.category,
                     e.notes,
                     actions("expenses", e, "Editar consumo"),
@@ -863,7 +964,11 @@ export default function App() {
               <strong>
                 {currency(
                   s.expenses
-                    .filter((e) => e.statementId === st.id)
+                    .filter(
+                      (e) =>
+                        e.statementId === st.id &&
+                        (e.currency ?? "ARS") === unit,
+                    )
                     .reduce((a, e) => a + e.amount, 0),
                 )}
               </strong>
@@ -906,7 +1011,7 @@ export default function App() {
               .filter((p) => p.statementId === st.id)
               .map((p) => [
                 dateLabel(p.date),
-                currency(p.amount),
+                formatCurrency(p.amount, p.currency ?? "ARS"),
                 p.method,
                 actions("payments", p, "Editar pago"),
               ])}
@@ -967,8 +1072,8 @@ export default function App() {
             rows={o.statements.map((st) => [
               cardName(st.cardId),
               dateLabel(st.dueDate),
-              currency(st.total),
-              currency(st.minimum),
+              currency(value(st, "total")),
+              currency(minimum(st)),
               currency(paid(s, st.id)),
               currency(balance(s, st)),
               <Status value={status(st.dueDate, balance(s, st))} />,
@@ -988,7 +1093,7 @@ export default function App() {
       </>
     );
   } else if (page === "plan") {
-    const sim = s.statements.find((st) => st.id === simId) ?? o.statements[0],
+    const sim = o.statements.find((st) => st.id === simId) ?? o.statements[0],
       simCents = Math.max(
         0,
         Math.round(Number(simPay.replace(",", ".")) * 100) || 0,
@@ -1015,10 +1120,10 @@ export default function App() {
             undefined,
             true,
           )}
-          {metric("Mínimos pendientes", plan.minimum)}
+          {metric("Obligaciones conocidas pendientes", plan.minimum)}
           {metric(
             "Total recomendado a pagar",
-            plan.allocated,
+            plan.blocked ? null : plan.allocated,
             plan.unused ? `${currency(plan.unused)} sin asignar` : undefined,
           )}
         </div>
@@ -1029,7 +1134,7 @@ export default function App() {
           </strong>{" "}
           Las recomendaciones no realizan pagos ni modifican tus datos.
         </p>
-        {plan.shortfall > 0 && (
+        {!plan.blocked && plan.shortfall > 0 && (
           <div className="alert danger" role="alert">
             <strong>
               El importe disponible no alcanza para cubrir todos los pagos
@@ -1041,6 +1146,12 @@ export default function App() {
               existe una distribución que cubra todos con este presupuesto.
             </p>
           </div>
+        )}
+        {plan.blocked && (
+          <p className="alert warning">
+            Plan pendiente: confirma pagos y modalidad en los resúmenes. No se
+            ha asignado dinero a ninguna tarjeta.
+          </p>
         )}
         {panel(
           "Cómo distribuir tus pagos",
@@ -1067,10 +1178,10 @@ export default function App() {
               headers={[
                 "Tarjeta / vencimiento",
                 "Saldo pendiente",
-                "Mínimo pendiente",
+                "Obligación pendiente",
                 "TEM mensual",
                 "Pago sugerido",
-                "Mínimo sin cubrir",
+                "Obligación sin cubrir",
                 "Por qué",
               ]}
               rows={plan.rows.map((r) => [
@@ -1093,8 +1204,14 @@ export default function App() {
                 currency(r.remaining),
                 currency(r.minimum),
                 r.rate === null ? "Sin informar" : `${r.rate} %`,
-                <strong className="teal">{currency(r.suggested)}</strong>,
-                currency(Math.max(0, r.minimum - r.suggested)),
+                <strong className="teal">
+                  {plan.blocked
+                    ? "Pendiente de revisión"
+                    : currency(r.suggested)}
+                </strong>,
+                r.minimum === null
+                  ? "Sin confirmar"
+                  : currency(Math.max(0, r.minimum - r.suggested)),
                 <span className="reason">{r.reason}</span>,
               ])}
             />
@@ -1121,7 +1238,7 @@ export default function App() {
             ]}
             rows={(["recommended", "interest", "snowball"] as Strategy[]).map(
               (mode) => {
-                const p = paymentPlan(s, month, available, mode);
+                const p = paymentPlan(s, month, available, mode, unit);
                 return [
                   mode === "recommended"
                     ? "Recomendada"
@@ -1131,22 +1248,24 @@ export default function App() {
                   p.rows
                     .map(
                       (r) =>
-                        `${cardName(r.statement.cardId)}: ${currency(r.suggested)}`,
+                        `${cardName(r.statement.cardId)}: ${p.blocked ? "Pendiente de revisión" : currency(r.suggested)}`,
                     )
                     .join(" · ") || "Sin deuda",
-                  p.rows.some(
-                    (r) => r.rate === null && r.remaining > r.suggested,
-                  )
-                    ? "Faltan tasas para comparar"
-                    : currency(
-                        p.rows.reduce(
-                          (a, r) =>
-                            a +
-                            (estimate(r.remaining, r.suggested, r.rate)
-                              .interest ?? 0),
-                          0,
-                        ),
-                      ) + " (estimación)",
+                  p.blocked
+                    ? "Pendiente: revisar pagos y modalidades"
+                    : p.rows.some(
+                          (r) => r.rate === null && r.remaining > r.suggested,
+                        )
+                      ? "Faltan tasas para comparar"
+                      : currency(
+                          p.rows.reduce(
+                            (a, r) =>
+                              a +
+                              (estimate(r.remaining, r.suggested, r.rate)
+                                .interest ?? 0),
+                            0,
+                          ),
+                        ) + " (estimación)",
                 ];
               },
             )}
@@ -1242,22 +1361,28 @@ export default function App() {
               "Compromiso restante",
               "Acciones",
             ]}
-            rows={s.purchases.map((p) => [
-              cardName(p.cardId),
-              p.description,
-              monthLabel(p.month),
-              `${p.current}/${p.total}`,
-              p.total - p.current,
-              currency(p.amount),
-              currency((p.total - p.current) * p.amount),
-              actions("purchases", p, "Editar compra en cuotas"),
-            ])}
+            rows={s.purchases
+              .filter((p) => (p.currency ?? "ARS") === unit)
+              .map((p) => [
+                cardName(p.cardId),
+                p.description,
+                monthLabel(p.month),
+                `${p.current}/${p.total}`,
+                p.total - p.current,
+                formatCurrency(p.amount, p.currency ?? "ARS"),
+                formatCurrency(
+                  (p.total - p.current) * p.amount,
+                  p.currency ?? "ARS",
+                ),
+                actions("purchases", p, "Editar compra en cuotas"),
+              ])}
           />,
         )}
         {panel(
           "Compromisos futuros desde " + monthLabel(month),
           <>
             <Chart
+              unit={unit}
               label="Compromisos futuros"
               points={future.map((x) => ({
                 label: monthLabel(x.month),
@@ -1393,6 +1518,7 @@ export default function App() {
               <section className="panel" key={service.id}>
                 <h2>Historial · {service.company}</h2>
                 <Chart
+                  unit={unit}
                   label={"Historial de " + service.company}
                   points={invoices.map((i) => ({
                     label: monthLabel(i.month),
@@ -1437,7 +1563,7 @@ export default function App() {
       first = new Date(displayMonth + "-01T12:00:00"),
       offset = (first.getDay() + 6) % 7,
       count = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-    const events = deadlines(s).filter((d) =>
+    const events = deadlines(s, unit).filter((d) =>
       d.dueDate.startsWith(displayMonth),
     );
     content = (
@@ -1557,7 +1683,10 @@ export default function App() {
             {panel(
               "Evolución de deuda " +
                 (historyCard === "all" ? "total" : cardName(historyCard)),
-              <Chart label="Evolución de deuda en pesos" points={debtPoints} />,
+              <Chart
+                label="Evolución de deuda por moneda"
+                points={debtPoints}
+              />,
             )}
             <div className="metrics three">
               {metric("Deuda inicial registrada", debtPoints[0].value)}
@@ -1643,7 +1772,7 @@ export default function App() {
       </>
     );
   else if (page === "report") {
-    const prev = overview(s, addMonth(month, -1));
+    const prev = overview(s, addMonth(month, -1), unit);
     content = (
       <>
         <div className="section-intro no-print">
@@ -1661,12 +1790,28 @@ export default function App() {
           </span>
           <h2>Resumen financiero — {monthLabel(month)}</h2>
           <p>
+            Tarjetas y totales en {unit}. Ingresos y servicios se muestran en
+            ARS por separado; no se suman a los totales USD.
+          </p>
+          <p>
             Generado el {dateLabel(today())}.{" "}
             {s.demo ? "Incluye datos ficticios de demostración." : ""}
           </p>
           <div className="metrics three">
-            {metric("Ingresos registrados", budget?.income ?? 0)}
-            {metric("Servicios", o.services)}
+            {metric(
+              "Ingresos registrados ARS",
+              budget?.income ?? 0,
+              undefined,
+              false,
+              "ARS",
+            )}
+            {metric(
+              "Servicios ARS (separados)",
+              arsOverview.services,
+              undefined,
+              false,
+              "ARS",
+            )}
             {metric("Total tarjetas del mes", o.total)}
             {metric("Pagado", o.payment)}
             {metric("Pendiente general", o.pending)}
@@ -1691,13 +1836,19 @@ export default function App() {
           <h3>Plan recomendado · presupuesto {currency(available)}</h3>
           <Table
             headers={["Tarjeta", "Sugerencia", "Motivo"]}
-            rows={paymentPlan(s, month, available).rows.map((r) => [
+            rows={paymentPlan(
+              s,
+              month,
+              available,
+              "recommended",
+              unit,
+            ).rows.map((r) => [
               cardName(r.statement.cardId),
-              currency(r.suggested),
+              plan.blocked ? "Pendiente de revisión" : currency(r.suggested),
               r.reason,
             ])}
           />
-          {plan.shortfall > 0 && (
+          {!plan.blocked && plan.shortfall > 0 && (
             <p>
               El presupuesto no cubre los mínimos: faltan{" "}
               {currency(plan.shortfall)}.
@@ -1714,6 +1865,28 @@ export default function App() {
   } else
     content = (
       <>
+        <ImportAccounts
+          state={s}
+          onImport={async (bundle, choices) => {
+            let result = { added: 0, skipped: 0 };
+            await mutate((current) => {
+              const merged = mergeExtracted(current, bundle, choices);
+              result = { added: merged.added, skipped: merged.skipped };
+              return merged.state;
+            });
+            setNotice(
+              `Importación completada: ${result.added} resúmenes agregados; ${result.skipped} existentes conservados. Revisa los pagos y modalidades pendientes.`,
+            );
+            setMonth(
+              bundle.accounts.find((a) =>
+                choices.some((c) => c.selected && c.key === a.key),
+              )?.statement.month ?? month,
+            );
+            setSelectedCurrency("ARS");
+            go("statements");
+          }}
+        />
+
         <section className="panel">
           <div className="panel-head">
             <div>
@@ -1859,7 +2032,7 @@ export default function App() {
         <section className="panel">
           <h2>Acerca de Mi organizador personal</h2>
           <p>
-            Versión 1 · Moneda: pesos argentinos (ARS) · Tasas de financiación:
+            Versión 2 · Monedas separadas: ARS y USD · Tasas de financiación:
             TEM mensual.
           </p>
           <p>
@@ -1949,6 +2122,20 @@ export default function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            <label className="currency-picker">
+              Moneda
+              <select
+                aria-label="Moneda de consulta"
+                value={unit}
+                disabled={page === "services"}
+                onChange={(e) =>
+                  setSelectedCurrency(e.target.value as Currency)
+                }
+              >
+                <option value="ARS">Pesos · ARS</option>
+                <option value="USD">Dólares · USD</option>
+              </select>
+            </label>
             <div className="month-picker">
               <button
                 aria-label="Mes anterior"
@@ -2042,6 +2229,28 @@ export default function App() {
                 >
                   Explorar demostración
                 </button>
+              </div>
+            )}
+          <p className="currency-notice">
+            Vista en{" "}
+            {unit === "ARS"
+              ? "pesos argentinos (ARS)"
+              : "dólares estadounidenses (USD)"}
+            . Las monedas no se suman ni convierten automáticamente.
+          </p>
+          {(o.minimumIncomplete || o.unconfirmedPayments > 0) &&
+            page !== "settings" &&
+            page !== "services" && (
+              <div className="alert warning">
+                <strong>Información pendiente de revisión.</strong>{" "}
+                {o.unconfirmedPayments > 0
+                  ? `${o.unconfirmedPayments} resúmenes necesitan confirmar pagos posteriores al cierre. `
+                  : ""}
+                {o.minimumIncomplete
+                  ? "Hay cuentas sin mínimo o modalidad de pago confirmada. "
+                  : ""}
+                Los saldos reflejan los registros actuales; el plan no
+                distribuirá dinero hasta completar la revisión.
               </div>
             )}
           {content}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X, Inbox, Pencil, Trash2 } from "lucide-react";
+import type { Currency } from "./model";
 import { currency } from "./finance";
 export type Field = {
   name: string;
@@ -43,7 +44,11 @@ export function Editor({
               values = { ...initial };
             for (const field of fields) {
               const v = String(f.get(field.name) ?? "");
-              if (field.type === "money") {
+              if (field.type === "money" || field.type === "nullableMoney") {
+                if (field.type === "nullableMoney" && v === "") {
+                  values[field.name] = null;
+                  continue;
+                }
                 if (!/^\d+(?:[.,]\d{1,2})?$/.test(v))
                   throw Error(
                     `${field.label}: usa un importe positivo con hasta dos decimales, sin separador de miles.`,
@@ -119,20 +124,28 @@ export function Editor({
                 <input
                   name={f.name}
                   type={
-                    f.type === "money" || f.type === "rate"
+                    f.type === "money" ||
+                    f.type === "nullableMoney" ||
+                    f.type === "rate"
                       ? "text"
                       : (f.type ?? "text")
                   }
                   inputMode={
-                    f.type === "money" || f.type === "rate"
+                    f.type === "money" ||
+                    f.type === "nullableMoney" ||
+                    f.type === "rate"
                       ? "decimal"
                       : undefined
                   }
                   required={f.required !== false}
                   defaultValue={
-                    f.type === "money"
-                      ? ((initial[f.name] ?? 0) / 100).toFixed(2)
-                      : (initial[f.name] ?? "")
+                    f.type === "nullableMoney"
+                      ? initial[f.name] == null
+                        ? ""
+                        : (initial[f.name] / 100).toFixed(2)
+                      : f.type === "money"
+                        ? ((initial[f.name] ?? 0) / 100).toFixed(2)
+                        : (initial[f.name] ?? "")
                   }
                   min={f.min ?? (f.type === "number" ? 0 : undefined)}
                   max={f.max}
@@ -251,9 +264,11 @@ export function Table({
 export function Chart({
   points,
   label,
+  unit = "ARS",
 }: {
   points: { label: string; value: number }[];
   label: string;
+  unit?: Currency;
 }) {
   const max = Math.max(...points.map((x) => x.value), 1),
     w = 680,
@@ -294,7 +309,7 @@ export function Chart({
               fill="#207b71"
             >
               <title>
-                {p.label}: {currency(p.value)}
+                {p.label}: {currency(p.value, unit)}
               </title>
             </circle>
             <text
@@ -315,7 +330,7 @@ export function Chart({
         <summary>Ver valores del gráfico</summary>
         <Table
           headers={["Período", "Importe"]}
-          rows={points.map((p) => [p.label, currency(p.value)])}
+          rows={points.map((p) => [p.label, currency(p.value, unit)])}
         />
       </details>
     </div>
