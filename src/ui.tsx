@@ -56,8 +56,9 @@ export function Editor({
                 values[field.name] = Math.round(
                   Number(v.replace(",", ".")) * 100,
                 );
-              } else if (field.type === "number")
-                values[field.name] = Number(v);
+              } else if (field.type === "nullableNumber")
+                values[field.name] = v === "" ? null : Number(v);
+              else if (field.type === "number") values[field.name] = Number(v);
               else if (field.type === "rate")
                 values[field.name] =
                   v === "" ? null : Number(v.replace(",", "."));
@@ -128,7 +129,9 @@ export function Editor({
                     f.type === "nullableMoney" ||
                     f.type === "rate"
                       ? "text"
-                      : (f.type ?? "text")
+                      : f.type === "nullableNumber"
+                        ? "number"
+                        : (f.type ?? "text")
                   }
                   inputMode={
                     f.type === "money" ||

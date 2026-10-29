@@ -74,7 +74,7 @@ IndexedDB `mis-cuentas-local`, versión 1, tiene almacenes `state` y `attachment
 
 Las acciones leen el estado más reciente bajo Web Locks para serializar las escrituras entre pestañas del mismo origen. BroadcastChannel informa las modificaciones de registros a otras pestañas. Conviene trabajar en una única pestaña para no tener formularios con datos anteriores a una edición realizada en otra pestaña.
 
-La copia tiene `format`, `version`, fecha de exportación, `state` y documentos base64. La versión permite agregar migraciones explícitas en futuras versiones; la app acepta copias de versiones 1 y 2, y genera versión 2. La base es local y no está cifrada. El navegador puede retirar almacenamiento, por eso la copia portable es esencial.
+La copia tiene `format`, `version`, fecha de exportación, `state` y documentos base64. La versión permite agregar migraciones explícitas en futuras versiones; la app acepta copias de versiones 1, 2 y 3, y genera versión 3. La base es local y no está cifrada. El navegador puede retirar almacenamiento, por eso la copia portable es esencial.
 
 ## Extensiones previstas
 
@@ -101,3 +101,13 @@ La forma física de IndexedDB se conserva, con datos versionados en 2. `validate
 `src/statementPrompt.ts` genera las instrucciones y un ejemplo ficticio válido del contrato `mis-cuentas-extracted`. El registro dinámico solo contiene identidad parcial de tarjetas y referencias de compras en cuotas, sin saldos, pagos ni notas privadas. `src/StatementPrompt.tsx` permite elegir el contexto, copiarlo y consultar el texto completo. No existe integración automática con una API de IA.
 
 El lector de texto acepta JSON estándar y un bloque Markdown JSON completo, además del código compacto previo. El contrato opcional de respuesta `mis-cuentas-extraction-error` permite comunicar datos ilegibles sin inventar una cuenta importable. Los errores de estructura señalan rutas de campos para pedir una corrección. Al vincular una tarjeta manual por primera vez se guarda una clave de importación estable; las compras usan la clave canónica de la tarjeta, aunque otra respuesta externa utilice un alias. Las cuotas de compras existentes se verifican contra el período y total conocidos antes de enlazar un nuevo consumo. Un conflicto de identidad en una clave automática exige revisión.
+
+## Refinanciaciones y presupuesto v3
+
+Los datos y backups v3 añaden snapshots de refinanciación por resumen/moneda y la distribución opcional de efectivo entre servicios y tarjetas. La base física de IndexedDB conserva sus almacenes. Las versiones 1 y 2 se migran cambiando la versión del contenido, sin inventar planes ni cambiar importes.
+
+`src/refinancing.ts` evalúa el snapshot de saldo/cuota y los pagos ya incluidos: sus identificadores, fechas e importes permiten evitar descontarlos dos veces y detectar correcciones posteriores. `src/RefinancingEditor.tsx` exige confirmación explícita de ese alcance. Los importes y condiciones de un plan importado quedan pendientes de revisión; una oferta de financiación no se convierte en contrato. `balance` separa la deuda vigente de `amountDue` y `requiredPayment`, que representan la obligación del período. Para planes pendientes los agregados mensuales se marcan incompletos y el motor no asigna dinero.
+
+`src/budget.ts` reparte el efectivo actual, reserva otros pagos indicados y los servicios no pagados, y devuelve el importe para tarjetas sin mezclar monedas. `src/BudgetAllocation.tsx` permite guardar ese monto y recalcular. El modo previo de dinero reservado solo para tarjetas se conserva para no cambiar el significado de presupuestos existentes. Los pagos sugeridos siguen sin registrar pagos reales.
+
+La prioridad recomendada cubre obligaciones primero y después compara TEM conocidas, con los límites adicionales de prepago de refinanciaciones. La restricción de adelantos incluye límite confirmado, beneficio de costo y tasa documentada. No se calcula el interés de un plan fijo mediante el estimador simple de saldo revolving. Los registros originales del resumen no se reemplazan por las condiciones nuevas.

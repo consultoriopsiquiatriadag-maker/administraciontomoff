@@ -71,10 +71,10 @@ describe("motor financiero", () => {
     expect(paymentPlan(s, "2026-10", 10000).rows[0].rate).toBeNull();
     expect(estimate(10000, 4000, null).interest).toBeNull();
   });
-  it("prioriza vencimientos inmediatos en la recomendada", () => {
+  it("prioriza costo después de cubrir obligaciones, aunque otra tarjeta venza antes", () => {
     const s = fixture();
     s.statements[1].dueDate = "2099-10-02";
-    expect(paymentPlan(s, "2026-10", 10000).rows[0].suggested).toBe(7000);
+    expect(paymentPlan(s, "2026-10", 10000).rows[0].suggested).toBe(2000);
   });
   it("no modifica datos reales", () => {
     const s = fixture(),

@@ -1,6 +1,6 @@
 # Mis cuentas
 
-Panel personal para organizar tarjetas, deudas y servicios del hogar. Versión 2 local, en español, con pesos y dólares separados. No requiere cuentas bancarias, claves, una API ni una base de datos remota.
+Panel personal para organizar tarjetas, deudas y servicios del hogar. Versión 3 local, en español, con pesos y dólares separados. No requiere cuentas bancarias, claves, una API ni una base de datos remota.
 
 ## Usar en Windows
 
@@ -103,3 +103,11 @@ También puedes importar **sin manejar archivos**: en Configuración → Importa
 En **Configuración → Preparar un resumen con mi ChatGPT** puedes copiar un prompt con el formato exacto y las referencias parciales de tus cuentas y cuotas. Pégalo en tu ChatGPT, adjunta el PDF mensual, copia su respuesta JSON y pégala en el organizador para revisar e importar. No se requieren archivos descargables, códigos comprimidos ni una API. La web no manda los documentos a ChatGPT automáticamente.
 
 Consulta la [guía del flujo mensual con ChatGPT](docs/MI-CHATGPT.md). Los meses anteriores se conservan y las compras vinculadas no se duplican por aparecer en otro resumen.
+
+## Refinanciaciones y dinero disponible
+
+En cada resumen puedes **Registrar refinanciación**, guardar datos pendientes o confirmar los importes del plan contratado. La deuda total se mantiene separada de la obligación mensual; las cifras originales del PDF se conservan. Los adelantos solo se proponen con condiciones y beneficio confirmados.
+
+En **Plan de pago** puedes ingresar dinero disponible para servicios y tarjetas; el motor separa las reservas elegidas y servicios pendientes antes de distribuir a tarjetas. Cubiertas las obligaciones, prioriza el mayor costo conocido. También se conserva el modo de dinero reservado únicamente para tarjetas y la separación ARS/USD.
+
+Consulta [refinanciaciones, estrategia y acceso desde celulares](docs/REFINANCIACIONES.md). Los datos y backups nuevos son versión 3; se aceptan y migran los de versiones 1 y 2.

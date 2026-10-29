@@ -187,3 +187,31 @@ describe("copias con monedas y migración", () => {
     expect(await readState()).toEqual(s);
   });
 });
+
+describe("respaldo de planes refinanciados", () => {
+  it("restaura un plan completo con sus pagos incluidos y presupuesto combinado", async () => {
+    const { stateWithPlan } = await import("./refinancing-fixture");
+    const s = stateWithPlan();
+    s.budgets = [
+      {
+        id: "budget",
+        month: "2026-10",
+        income: 0,
+        other: 0,
+        cardBudget: 0,
+        allocationMode: "all",
+        availableForBills: 100000,
+        reserveOther: 10000,
+      },
+    ];
+    const original = JSON.stringify({
+      format: "mis-cuentas",
+      version: 3,
+      state: s,
+      attachments: [],
+    });
+    const backup = await parseBackup(original);
+    await saveState(backup.state, backup.attachments);
+    expect(await readState()).toEqual(s);
+  });
+});

@@ -1,7 +1,8 @@
+import { refinancingMode, refinancingPosition } from "./refinancing";
 import { z } from "zod";
 export const currencySchema = z.enum(["ARS", "USD"]);
 export type Currency = z.infer<typeof currencySchema>;
-const paymentMode = z.enum(["minimum", "full", "unknown"]);
+const paymentMode = z.enum(["minimum", "full", "unknown", "refinanced"]);
 const id = z.string().min(1).max(100);
 const text = z.string().max(2000);
 const money = z.number().int().min(0).max(1e14);
@@ -17,6 +18,62 @@ const date = z
   );
 const optionalDate = z.union([date, z.literal("")]);
 const rate = z.number().min(0).max(1000).nullable();
+export const refinancingSchema = z
+  .object({
+    status: z.enum(["pending", "confirmed"]),
+    startDate: optionalDate,
+    asOfDate: optionalDate,
+    dueDate: optionalDate,
+    balance: money.nullable(),
+    monthlyDue: money.nullable(),
+    installmentAmount: money.nullable(),
+    current: z.number().int().min(1).max(600).nullable(),
+    total: z.number().int().min(1).max(600).nullable(),
+    rate,
+    prepaymentMode: z.enum(["unknown", "not_allowed", "confirmed"]),
+    prepaymentCap: money.nullable(),
+    prepaymentBenefitConfirmed: z.boolean(),
+    includedPayments: z.array(z.object({ id, amount: money, date })).max(10000),
+    notes: text,
+  })
+  .superRefine((r, ctx) => {
+    const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (
+      new Set(r.includedPayments.map((p) => p.id)).size !==
+      r.includedPayments.length
+    )
+      fail("Hay pagos incluidos duplicados en la confirmación del plan");
+    if (r.current !== null && r.total !== null && r.current > r.total)
+      fail("La cuota actual supera el total de cuotas");
+    if (r.balance !== null && r.monthlyDue !== null && r.monthlyDue > r.balance)
+      fail(
+        "El importe mensual pendiente no puede superar el saldo de deuda confirmado",
+      );
+    if (
+      r.status === "confirmed" &&
+      (!r.startDate ||
+        !r.asOfDate ||
+        !r.dueDate ||
+        r.balance === null ||
+        r.monthlyDue === null ||
+        r.installmentAmount === null ||
+        r.current === null ||
+        r.total === null)
+    )
+      fail(
+        "Para confirmar el plan completa fechas, saldo informado, obligación mensual, cuota actual y total de cuotas",
+      );
+    if (
+      r.prepaymentMode === "confirmed" &&
+      (r.prepaymentCap === null ||
+        !r.prepaymentBenefitConfirmed ||
+        r.rate === null)
+    )
+      fail(
+        "Para adelantos confirma el límite adicional, el beneficio de costo y la TEM del plan; si faltan, deja pendiente",
+      );
+  });
+export type Refinancing = z.infer<typeof refinancingSchema>;
 export const cardSchema = z.object({
   id,
   bank: text,
@@ -50,6 +107,8 @@ export const statementSchema = z.object({
   previousPayments: money,
   total: money,
   minimum: money.nullable(),
+  refinancingARS: refinancingSchema.optional(),
+  refinancingUSD: refinancingSchema.optional(),
   paymentMode: paymentMode.optional(),
   usdPaymentMode: paymentMode.optional(),
   totalUSD: money.optional(),
@@ -129,9 +188,12 @@ export const budgetSchema = z.object({
   other: money,
   cardBudget: money,
   cardBudgetUSD: money.optional(),
+  allocationMode: z.enum(["cards", "all"]).optional(),
+  availableForBills: money.optional(),
+  reserveOther: money.optional(),
 });
 export const stateSchema = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   demo: z.boolean(),
   cards: z.array(cardSchema),
   statements: z.array(statementSchema),
@@ -153,7 +215,7 @@ export type Budget = z.infer<typeof budgetSchema>;
 export type State = z.infer<typeof stateSchema>;
 export type Table = Exclude<keyof State, "version" | "demo">;
 export const emptyState = (): State => ({
-  version: 2,
+  version: 3,
   demo: false,
   cards: [],
   statements: [],
@@ -175,8 +237,8 @@ export function validateState(input: unknown): State {
     input &&
     typeof input === "object" &&
     "version" in input &&
-    input.version === 1;
-  const s = stateSchema.parse(legacy ? { ...input, version: 2 } : input);
+    (input.version === 1 || input.version === 2);
+  const s = stateSchema.parse(legacy ? { ...input, version: 3 } : input);
   const has = (table: Table, id: string) => s[table].some((x) => x.id === id);
   for (const table of [
     "cards",
@@ -237,13 +299,19 @@ export function validateState(input: unknown): State {
     if (st.usdPaymentMode === "minimum" && st.minimumUSD == null)
       throw Error("La modalidad mínimo requiere un importe USD informado");
     for (const unit of ["ARS", "USD"] as const) {
-      const total = unit === "ARS" ? st.total : (st.totalUSD ?? 0);
-      if (
-        s.payments
-          .filter(
-            (p) => p.statementId === st.id && (p.currency ?? "ARS") === unit,
-          )
-          .reduce((a, p) => a + p.amount, 0) > total
+      const pos = refinancingPosition(s, st, unit);
+      const payments = s.payments.filter(
+        (p) => p.statementId === st.id && (p.currency ?? "ARS") === unit,
+      );
+      if (refinancingMode(st, unit) && pos.valid) {
+        if (pos.r!.balance !== null && pos.paidAfter > pos.r!.balance)
+          throw Error(
+            `Los pagos ${unit} superan el saldo refinanciado confirmado`,
+          );
+      } else if (
+        !refinancingMode(st, unit) &&
+        payments.reduce((a, p) => a + p.amount, 0) >
+          (unit === "ARS" ? st.total : (st.totalUSD ?? 0))
       )
         throw Error(`Los pagos ${unit} superan el total del resumen`);
     }

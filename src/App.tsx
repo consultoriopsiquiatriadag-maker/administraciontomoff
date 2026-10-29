@@ -1,3 +1,11 @@
+import { BudgetAllocation } from "./BudgetAllocation";
+import { RefinancingEditor } from "./RefinancingEditor";
+import { allocateBudget } from "./budget";
+import {
+  refinancingMode,
+  refinancingPosition,
+  effectiveDueDate,
+} from "./refinancing";
 import { StatementPrompt } from "./StatementPrompt";
 import { ImportAccounts } from "./ImportAccounts";
 import { mergeExtracted } from "./importAccounts";
@@ -57,6 +65,7 @@ import {
   overview,
   statementValue,
   requiredPayment,
+  amountDue as amountDueIn,
   paymentPlan,
   projection,
   estimate,
@@ -96,6 +105,10 @@ export default function App() {
     [selectedCurrency, setSelectedCurrency] = useState<Currency>("ARS"),
     [editing, setEditing] = useState<Editing | null>(null),
     [detail, setDetail] = useState(""),
+    [refinancingTarget, setRefinancingTarget] = useState<{
+      id: string;
+      unit: Currency;
+    } | null>(null),
     [attachments, setAttachments] = useState<Attachment[]>([]),
     [strategy, setStrategy] = useState<Strategy>("recommended"),
     [mobile, setMobile] = useState(false),
@@ -193,6 +206,8 @@ export default function App() {
     n == null ? "No informado" : formatCurrency(n, unit);
   const paid = (state: State, id: string) => paidIn(state, id, unit);
   const balance = (state: State, st: Statement) => balanceIn(state, st, unit);
+  const amountDue = (state: State, st: Statement) =>
+    amountDueIn(state, st, unit);
   const effectiveRate = (state: State, st: Statement) =>
     effectiveRateIn(state, st, unit);
   const value = (st: Statement, key: Parameters<typeof statementValue>[1]) =>
@@ -207,8 +222,8 @@ export default function App() {
         : "Terminación por confirmar";
   const o = overview(s, month, unit),
     budget = s.budgets.find((x) => x.month === month),
-    available =
-      unit === "ARS" ? (budget?.cardBudget ?? 0) : (budget?.cardBudgetUSD ?? 0),
+    allocation = allocateBudget(s, month, unit),
+    available = allocation.cardsAvailable,
     plan = paymentPlan(s, month, available, strategy, unit);
   const cardName = (id: string) =>
     s.cards.find((c) => c.id === id)?.name ?? "Tarjeta";
@@ -453,7 +468,7 @@ export default function App() {
   }
   const future = projection(s, month, 12, unit);
   const due = deadlines(s, unit).filter(
-    (d) => d.amount > 0 && d.month === month,
+    (d) => (d.amount > 0 || d.uncertain) && d.month === month,
   );
   const monthDue = deadlines(s, unit).filter((d) => d.month === month);
 
@@ -495,36 +510,60 @@ export default function App() {
       .reduce((a, st) => a + balance(s, st), 0),
   }));
   const arsOverview = overview(s, month, "ARS");
+  const cashARS = allocateBudget(s, month);
   const budgetView = (
     <>
       <div className="budget-list">
-        <div>
-          <span>Ingresos ARS</span>
-          <strong>{formatCurrency(budget?.income ?? 0)}</strong>
-        </div>
-        <div>
-          <span>Servicios ARS</span>
-          <strong>− {formatCurrency(arsOverview.services)}</strong>
-        </div>
-        <div>
-          <span>Reservado para tarjetas ARS</span>
-          <strong>− {formatCurrency(budget?.cardBudget ?? 0)}</strong>
-        </div>
-        <div>
-          <span>Otros gastos ARS</span>
-          <strong>− {formatCurrency(budget?.other ?? 0)}</strong>
-        </div>
-        <div className="budget-total">
-          <span>Disponible en pesos después del plan</span>
-          <strong>
-            {formatCurrency(
-              (budget?.income ?? 0) -
-                arsOverview.services -
-                (budget?.cardBudget ?? 0) -
-                (budget?.other ?? 0),
-            )}
-          </strong>
-        </div>
+        {cashARS.combined ? (
+          <>
+            <div>
+              <span>Dinero disponible ahora ARS</span>
+              <strong>{formatCurrency(cashARS.total)}</strong>
+            </div>
+            <div>
+              <span>Reserva para otros pagos pendientes</span>
+              <strong>− {formatCurrency(cashARS.otherReserved)}</strong>
+            </div>
+            <div>
+              <span>Servicios pendientes reservados</span>
+              <strong>− {formatCurrency(cashARS.servicesReserved)}</strong>
+            </div>
+            <div className="budget-total">
+              <span>Disponible para tarjetas después de reservas</span>
+              <strong>{formatCurrency(cashARS.cardsAvailable)}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <span>Ingresos ARS</span>
+              <strong>{formatCurrency(budget?.income ?? 0)}</strong>
+            </div>
+            <div>
+              <span>Servicios ARS del mes</span>
+              <strong>− {formatCurrency(arsOverview.services)}</strong>
+            </div>
+            <div>
+              <span>Reservado para tarjetas ARS</span>
+              <strong>− {formatCurrency(budget?.cardBudget ?? 0)}</strong>
+            </div>
+            <div>
+              <span>Otros gastos ARS</span>
+              <strong>− {formatCurrency(budget?.other ?? 0)}</strong>
+            </div>
+            <div className="budget-total">
+              <span>Disponible en pesos después del plan</span>
+              <strong>
+                {formatCurrency(
+                  (budget?.income ?? 0) -
+                    arsOverview.services -
+                    (budget?.cardBudget ?? 0) -
+                    (budget?.other ?? 0),
+                )}
+              </strong>
+            </div>
+          </>
+        )}
         <div>
           <span>Disponible para tarjetas en USD (separado)</span>
           <strong>{formatCurrency(budget?.cardBudgetUSD ?? 0, "USD")}</strong>
@@ -552,19 +591,21 @@ export default function App() {
         <div className="metrics">
           {metric(
             "Deuda pendiente en tarjetas",
-            o.debt,
-            "Saldo de los resúmenes de este período",
+            o.obligationsIncomplete ? null : o.debt,
+            o.obligationsIncomplete
+              ? "Hay refinanciaciones pendientes de confirmar"
+              : "Saldo de los resúmenes de este período",
             true,
           )}
           {metric(
             "Obligaciones del mes",
-            o.obligations,
+            o.obligationsIncomplete ? null : o.obligations,
             "Tarjetas + servicios",
           )}
           {metric("Ya pagado", o.payment, "Pagos de tarjetas y facturas")}
           {metric(
             "Total pendiente",
-            o.pending,
+            o.obligationsIncomplete ? null : o.pending,
             "Lo que falta para completar el mes",
           )}
         </div>
@@ -578,7 +619,9 @@ export default function App() {
                     {due.slice(0, 5).map((d) => (
                       <div className="deadline" key={d.id}>
                         <div className="date-tile">
-                          <strong>{d.dueDate.slice(8)}</strong>
+                          <strong>
+                            {d.uncertain ? "—" : d.dueDate.slice(8)}
+                          </strong>
                           <small>
                             {new Date(
                               d.dueDate + "T12:00:00",
@@ -589,16 +632,26 @@ export default function App() {
                           <strong>{d.name}</strong>
                           <small>
                             {d.kind} ·{" "}
-                            {daysUntil(d.dueDate) < 0
-                              ? `${Math.abs(daysUntil(d.dueDate))} días de atraso`
-                              : daysUntil(d.dueDate) === 0
-                                ? "Vence hoy"
-                                : `Vence en ${daysUntil(d.dueDate)} días`}
+                            {d.uncertain
+                              ? "Vencimiento del plan por confirmar"
+                              : daysUntil(d.dueDate) < 0
+                                ? `${Math.abs(daysUntil(d.dueDate))} días de atraso`
+                                : daysUntil(d.dueDate) === 0
+                                  ? "Vence hoy"
+                                  : `Vence en ${daysUntil(d.dueDate)} días`}
                           </small>
                         </div>
                         <div className="align-right">
-                          <strong>{currency(d.amount)}</strong>
-                          <Status value={status(d.dueDate, d.amount)} />
+                          <strong>
+                            {d.uncertain ? "Por confirmar" : currency(d.amount)}
+                          </strong>
+                          <Status
+                            value={
+                              d.uncertain
+                                ? "Por confirmar"
+                                : status(d.dueDate, d.amount)
+                            }
+                          />
                         </div>
                       </div>
                     ))}
@@ -849,6 +902,83 @@ export default function App() {
           {metric("Pagado", paid(s, st.id))}
           {metric("Saldo pendiente", balance(s, st), undefined, true)}
         </div>
+        <section className="panel refinancing-summary">
+          <div className="panel-head">
+            <h2>Refinanciación del saldo · {unit}</h2>
+            <button
+              className="button secondary"
+              onClick={() => setRefinancingTarget({ id: st.id, unit })}
+            >
+              {refinancingMode(st, unit)
+                ? "Revisar refinanciación"
+                : "Registrar refinanciación"}
+            </button>
+          </div>
+          {refinancingMode(st, unit) ? (
+            (() => {
+              const pos = refinancingPosition(s, st, unit),
+                r = pos.r;
+              return (
+                <>
+                  <p className={pos.valid ? "alert" : "alert warning"}>
+                    {pos.valid
+                      ? "Plan confirmado: se distingue la deuda total de lo exigible este período."
+                      : pos.reason +
+                        " El documento original se conserva como referencia; el plan de pagos espera esta revisión."}
+                  </p>
+                  {r && (
+                    <>
+                      <div className="detail-grid">
+                        <div>
+                          <span>Saldo de deuda informado</span>
+                          <strong>{currency(pos.debt ?? r.balance)}</strong>
+                        </div>
+                        <div>
+                          <span>Obligación pendiente del período</span>
+                          <strong>{currency(pos.due ?? r.monthlyDue)}</strong>
+                        </div>
+                        <div>
+                          <span>Cuota del plan</span>
+                          <strong>
+                            {r.current ?? "—"} / {r.total ?? "—"} ·{" "}
+                            {currency(r.installmentAmount)}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Vencimiento confirmado</span>
+                          <strong>{dateLabel(r.dueDate)}</strong>
+                        </div>
+                        <div>
+                          <span>Cuotas posteriores a la actual</span>
+                          <strong>
+                            {r.total !== null && r.current !== null
+                              ? r.total - r.current
+                              : "Pendiente"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Adelantos adicionales</span>
+                          <strong>
+                            {pos.extraAllowed
+                              ? currency(pos.extraCap)
+                              : "Sin propuesta hasta confirmar condiciones"}
+                          </strong>
+                        </div>
+                      </div>
+                      {r.notes && <p className="muted">{r.notes}</p>}
+                    </>
+                  )}
+                </>
+              );
+            })()
+          ) : (
+            <p className="muted">
+              Si ya refinanciaste el saldo, registra el plan contratado. Una
+              oferta impresa en el resumen no confirma que exista
+              refinanciación. Los totales originales no se reemplazan.
+            </p>
+          )}
+        </section>
         {st.paymentsConfirmed === false && (
           <div className="alert warning">
             <strong>Pagos posteriores al cierre pendientes de revisar.</strong>
@@ -881,8 +1011,8 @@ export default function App() {
         )}
         {balance(s, st) > 0 && requiredPayment(s, st, unit) === null && (
           <p className="alert warning">
-            No se conoce el mínimo o la modalidad de pago en {unit}. Edita el
-            resumen para ingresar el mínimo informado o confirmar que
+            No se conoce la obligación o la modalidad de pago en {unit}. Edita
+            el resumen para ingresar el mínimo informado o confirmar que
             corresponde pago total. No se supone mínimo cero.
           </p>
         )}
@@ -1026,7 +1156,9 @@ export default function App() {
                   id: uid(),
                   statementId: st.id,
                   date: today(),
-                  amount: balance(s, st),
+                  amount: refinancingMode(st, unit)
+                    ? amountDue(s, st)
+                    : balance(s, st),
                   method: "",
                 },
                 "Registrar pago",
@@ -1067,17 +1199,27 @@ export default function App() {
               "Mínimo",
               "Pagado",
               "Pendiente",
-              "Estado",
+              "Estado del período",
               "Detalle",
             ]}
             rows={o.statements.map((st) => [
               cardName(st.cardId),
-              dateLabel(st.dueDate),
+              refinancingMode(st, unit) &&
+              !refinancingPosition(s, st, unit).valid
+                ? "Por confirmar"
+                : dateLabel(effectiveDueDate(st, unit)),
               currency(value(st, "total")),
               currency(minimum(st)),
               currency(paid(s, st.id)),
               currency(balance(s, st)),
-              <Status value={status(st.dueDate, balance(s, st))} />,
+              <Status
+                value={
+                  refinancingMode(st, unit) &&
+                  !refinancingPosition(s, st, unit).valid
+                    ? "Por confirmar"
+                    : status(effectiveDueDate(st, unit), amountDue(s, st))
+                }
+              />,
               <button
                 className="button secondary small"
                 onClick={() => setDetail(st.id)}
@@ -1099,9 +1241,15 @@ export default function App() {
         0,
         Math.round(Number(simPay.replace(",", ".")) * 100) || 0,
       ),
-      est = sim
-        ? estimate(balance(s, sim), simCents, effectiveRate(s, sim))
-        : null;
+      est =
+        sim &&
+        (!refinancingMode(sim, unit) || refinancingPosition(s, sim, unit).valid)
+          ? estimate(
+              balance(s, sim),
+              simCents,
+              refinancingMode(sim, unit) ? null : effectiveRate(s, sim),
+            )
+          : null;
     content = (
       <>
         <div className="section-intro">
@@ -1114,6 +1262,82 @@ export default function App() {
             Cambiar dinero disponible
           </button>
         </div>
+        <BudgetAllocation
+          key={month + unit + JSON.stringify(budget)}
+          budget={budget}
+          unit={unit}
+          onSave={async (patch) => {
+            await mutate((current) => {
+              const old = current.budgets.find((b) => b.month === month);
+              const next = {
+                id: old?.id ?? uid(),
+                month,
+                income: 0,
+                other: 0,
+                cardBudget: 0,
+                ...old,
+                ...patch,
+              };
+              return {
+                ...current,
+                budgets: old
+                  ? current.budgets.map((b) => (b.id === old.id ? next : b))
+                  : [...current.budgets, next],
+              };
+            });
+          }}
+        />
+        {unit === "ARS" && allocation.combined && (
+          <section className="panel">
+            <h2>Primero separaremos los pagos del hogar</h2>
+            <p>
+              Disponible {currency(allocation.total)} · Reserva elegida{" "}
+              {currency(allocation.otherReserved)} · Servicios pendientes
+              reservados {currency(allocation.servicesReserved)} · Para tarjetas{" "}
+              {currency(available)}.
+            </p>
+            <Table
+              headers={[
+                "Servicio",
+                "Vencimiento",
+                "Pendiente",
+                "Reserva sugerida",
+              ]}
+              rows={allocation.services.map((r) => [
+                r.name,
+                dateLabel(r.invoice.dueDate),
+                currency(r.invoice.amount),
+                currency(r.suggested),
+              ])}
+            />
+            {allocation.servicesShortfall > 0 && (
+              <p className="alert danger">
+                Faltan {currency(allocation.servicesShortfall)} para cubrir los
+                servicios pendientes; no se asigna dinero a tarjetas mientras
+                esta reserva quede sin cubrir.
+              </p>
+            )}
+            {allocation.otherShortfall > 0 && (
+              <p className="alert danger">
+                La reserva solicitada supera el disponible en{" "}
+                {currency(allocation.otherShortfall)}.
+              </p>
+            )}
+            <p className="muted">
+              Las facturas pagadas no se descuentan otra vez. Las reservas son
+              propuestas; no marcan servicios como pagados.
+            </p>
+          </section>
+        )}
+        {unit === "ARS" &&
+          !allocation.combined &&
+          allocation.servicesPending > 0 && (
+            <p className="alert warning">
+              Este presupuesto es solo para tarjetas. Hay{" "}
+              {currency(allocation.servicesPending)} en servicios pendientes que
+              deben contar con fondos separados.
+            </p>
+          )}
         <div className="metrics three">
           {metric(
             "Dinero disponible para tarjetas",
@@ -1139,7 +1363,7 @@ export default function App() {
           <div className="alert danger" role="alert">
             <strong>
               El importe disponible no alcanza para cubrir todos los pagos
-              mínimos.
+              mínimos y cuotas confirmadas.
             </strong>
             <p>
               Faltan {currency(plan.shortfall)}. La asignación parcial sigue el
@@ -1151,7 +1375,8 @@ export default function App() {
         {plan.blocked && (
           <p className="alert warning">
             Plan pendiente: confirma pagos y modalidad en los resúmenes. No se
-            ha asignado dinero a ninguna tarjeta.
+            ha asignado dinero a ninguna tarjeta. Revisa también las
+            refinanciaciones pendientes.
           </p>
         )}
         {panel(
@@ -1198,11 +1423,12 @@ export default function App() {
                     <strong>{cardName(r.statement.cardId)}</strong>
                   </span>
                   <small>
-                    {dateLabel(r.statement.dueDate)} ·{" "}
-                    {daysUntil(r.statement.dueDate)} días
+                    {dateLabel(r.dueDate)} · {daysUntil(r.dueDate)} días
                   </small>
                 </>,
-                currency(r.remaining),
+                r.refinanced && r.minimum === null
+                  ? "Saldo por confirmar"
+                  : currency(r.remaining),
                 currency(r.minimum),
                 r.rate === null ? "Sin informar" : `${r.rate} %`,
                 <strong className="teal">
@@ -1218,8 +1444,10 @@ export default function App() {
             />
             <p className="muted">
               La estrategia recomendada prioriza, después de los mínimos, los
-              vencimientos de hoy, vencidos o de los próximos 3 días; luego la
-              TEM más alta y el menor saldo. Es una regla orientativa, no una
+              importes exigibles por vencimiento. Con esas obligaciones
+              cubiertas, el excedente prioriza la TEM conocida más alta; los
+              planes refinanciados solo admiten adelantos con condiciones y
+              beneficio confirmados. Es una regla orientativa, no una
               optimización contractual.
             </p>
             <p className="muted">
@@ -1228,6 +1456,14 @@ export default function App() {
               distribuir.
             </p>
           </>,
+        )}
+        {plan.costComparisonIncomplete && !plan.blocked && (
+          <p className="alert warning">
+            La comparación de costos está incompleta: faltan tasas o condiciones
+            de adelanto. La distribución es orientativa; no garantiza el menor
+            costo contractual. Puede quedar dinero sin asignar a una
+            refinanciación.
+          </p>
         )}
         {panel(
           "Comparar estrategias",
@@ -1255,18 +1491,22 @@ export default function App() {
                   p.blocked
                     ? "Pendiente: revisar pagos y modalidades"
                     : p.rows.some(
-                          (r) => r.rate === null && r.remaining > r.suggested,
+                          (r) => r.refinanced && r.remaining > r.suggested,
                         )
-                      ? "Faltan tasas para comparar"
-                      : currency(
-                          p.rows.reduce(
-                            (a, r) =>
-                              a +
-                              (estimate(r.remaining, r.suggested, r.rate)
-                                .interest ?? 0),
-                            0,
-                          ),
-                        ) + " (estimación)",
+                      ? "Refinanciaciones: costo contractual no comparable con una multiplicación simple"
+                      : p.rows.some(
+                            (r) => r.rate === null && r.remaining > r.suggested,
+                          )
+                        ? "Faltan tasas para comparar"
+                        : currency(
+                            p.rows.reduce(
+                              (a, r) =>
+                                a +
+                                (estimate(r.remaining, r.suggested, r.rate)
+                                  .interest ?? 0),
+                              0,
+                            ),
+                          ) + " (estimación)",
                 ];
               },
             )}
@@ -1291,7 +1531,7 @@ export default function App() {
                   </select>
                 </label>
                 <label>
-                  Pago previsto (pesos)
+                  Pago previsto ({unit})
                   <input
                     inputMode="decimal"
                     value={simPay}
@@ -1299,6 +1539,14 @@ export default function App() {
                   />
                 </label>
               </div>
+              {sim &&
+                refinancingMode(sim, unit) &&
+                !refinancingPosition(s, sim, unit).valid && (
+                  <p className="alert warning">
+                    Confirma los datos de la refinanciación antes de simular un
+                    saldo o un pago.
+                  </p>
+                )}
               {est && (
                 <>
                   <div className="metrics three">
@@ -1308,8 +1556,9 @@ export default function App() {
                       <div className="metric">
                         <span>Interés del próximo período</span>
                         <p>
-                          Falta ingresar la tasa informada por la tarjeta para
-                          realizar esta estimación.
+                          {refinancingMode(sim!, unit)
+                            ? "La refinanciación requiere el cálculo contractual del banco. No se estima interés multiplicando el saldo del plan."
+                            : "Falta ingresar la tasa informada por la tarjeta para realizar esta estimación."}
                         </p>
                       </div>
                     ) : (
@@ -1317,10 +1566,9 @@ export default function App() {
                     )}
                   </div>
                   <p className="muted">
-                    ESTIMACIÓN: saldo pendiente × TEM / 100, sin nuevos
-                    consumos, impuestos ni cargos. No representa el cálculo
-                    contractual del banco. Un pago superior al saldo se limita
-                    al saldo para esta simulación.
+                    {refinancingMode(sim!, unit)
+                      ? "Solo se muestra saldo registrado menos pago hipotético, sin nuevos cargos. La distribución entre capital e intereses y el cambio de cuotas los determina el banco."
+                      : "ESTIMACIÓN: saldo pendiente × TEM / 100, sin nuevos consumos, impuestos ni cargos. No representa el cálculo contractual del banco. Un pago superior al saldo se limita al saldo para esta simulación."}
                   </p>
                 </>
               )}
@@ -1621,12 +1869,19 @@ export default function App() {
                     .filter((e) => e.dueDate === date)
                     .map((e) => (
                       <div
-                        className={"calendar-event " + (e.amount ? "" : "done")}
+                        className={
+                          "calendar-event " +
+                          (e.amount || e.uncertain ? "" : "done")
+                        }
                         key={e.id}
                       >
                         {e.name}
                         <small>
-                          {e.amount ? currency(e.amount) : "Pagado"}
+                          {e.uncertain
+                            ? "Por confirmar"
+                            : e.amount
+                              ? currency(e.amount)
+                              : "Pagado"}
                         </small>
                       </div>
                     ))}
@@ -1650,9 +1905,13 @@ export default function App() {
               dateLabel(d.dueDate),
               d.name,
               d.kind,
-              currency(d.amount),
+              d.uncertain ? "Por confirmar" : currency(d.amount),
               d.kind === "Tarjeta" ? currency(d.minimum) : "—",
-              <Status value={status(d.dueDate, d.amount)} />,
+              <Status
+                value={
+                  d.uncertain ? "Por confirmar" : status(d.dueDate, d.amount)
+                }
+              />,
             ])}
           />,
         )}
@@ -1813,9 +2072,15 @@ export default function App() {
               false,
               "ARS",
             )}
-            {metric("Total tarjetas del mes", o.total)}
+            {metric(
+              "Obligaciones de tarjetas del mes",
+              o.obligationsIncomplete ? null : o.obligations - o.services,
+            )}
             {metric("Pagado", o.payment)}
-            {metric("Pendiente general", o.pending)}
+            {metric(
+              "Pendiente general",
+              o.obligationsIncomplete ? null : o.pending,
+            )}
             {metric("Deuda pendiente tarjetas", o.debt)}
           </div>
           <p>
@@ -1831,7 +2096,7 @@ export default function App() {
             rows={monthDue.map((d) => [
               dateLabel(d.dueDate),
               d.name,
-              currency(d.amount),
+              d.uncertain ? "Por confirmar" : currency(d.amount),
             ])}
           />
           <h3>Plan recomendado · presupuesto {currency(available)}</h3>
@@ -2034,7 +2299,7 @@ export default function App() {
         <section className="panel">
           <h2>Acerca de Mi organizador personal</h2>
           <p>
-            Versión 2 · Monedas separadas: ARS y USD · Tasas de financiación:
+            Versión 3 · Monedas separadas: ARS y USD · Tasas de financiación:
             TEM mensual.
           </p>
           <p>
@@ -2249,7 +2514,7 @@ export default function App() {
                   ? `${o.unconfirmedPayments} resúmenes necesitan confirmar pagos posteriores al cierre. `
                   : ""}
                 {o.minimumIncomplete
-                  ? "Hay cuentas sin mínimo o modalidad de pago confirmada. "
+                  ? "Hay cuentas sin mínimo, modalidad o refinanciación confirmada. "
                   : ""}
                 Los saldos reflejan los registros actuales; el plan no
                 distribuirá dinero hasta completar la revisión.
@@ -2268,6 +2533,46 @@ export default function App() {
           </footer>
         </div>
       </main>
+      {refinancingTarget &&
+        s.statements.find((st) => st.id === refinancingTarget.id) && (
+          <RefinancingEditor
+            key={refinancingTarget.id + refinancingTarget.unit}
+            state={s}
+            statement={s.statements.find(
+              (st) => st.id === refinancingTarget.id,
+            )!}
+            unit={refinancingTarget.unit}
+            onClose={() => setRefinancingTarget(null)}
+            onSave={async (r) => {
+              await mutate((current) => {
+                if (
+                  !current.statements.some(
+                    (st) => st.id === refinancingTarget.id,
+                  )
+                )
+                  throw Error("El resumen ya no existe.");
+                return {
+                  ...current,
+                  statements: current.statements.map((st) =>
+                    st.id === refinancingTarget.id
+                      ? refinancingTarget.unit === "ARS"
+                        ? {
+                            ...st,
+                            paymentMode: "refinanced" as const,
+                            refinancingARS: r,
+                          }
+                        : {
+                            ...st,
+                            usdPaymentMode: "refinanced" as const,
+                            refinancingUSD: r,
+                          }
+                      : st,
+                  ),
+                };
+              });
+            }}
+          />
+        )}
       {editing && (
         <Editor
           key={editing.row.id}

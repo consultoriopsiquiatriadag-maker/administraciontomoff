@@ -165,13 +165,16 @@ describe("monedas y obligaciones desconocidas", () => {
     expect(p.unused).toBe(500);
     expect(st.minimum).toBeNull();
   });
-  it("migra versión 1 sin cambiar importes ni perder referencias", () => {
-    const original = demoState("2026-10");
-    const legacy = { ...original, version: 1 };
-    const migrated = validateState(legacy);
-    expect(migrated).toEqual(original);
-    expect(migrated.version).toBe(2);
-  });
+  it.each([1, 2])(
+    "migra versión %s sin cambiar importes ni perder referencias",
+    (version) => {
+      const original = demoState("2026-10");
+      const legacy = { ...original, version };
+      const migrated = validateState(legacy);
+      expect(migrated).toEqual(original);
+      expect(migrated.version).toBe(3);
+    },
+  );
 });
 
 describe("importación por texto sin archivos", () => {

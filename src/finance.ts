@@ -1,3 +1,8 @@
+import {
+  refinancingMode,
+  refinancingPosition,
+  effectiveDueDate,
+} from "./refinancing";
 import type { State, Statement, Currency } from "./model";
 import { today } from "./model";
 export const currency = (cents: number, unit: Currency = "ARS") =>
@@ -48,24 +53,43 @@ export const paid = (s: State, id: string, unit: Currency = "ARS") =>
     .filter((p) => p.statementId === id && (p.currency ?? "ARS") === unit)
     .reduce((a, p) => a + p.amount, 0);
 export const balance = (s: State, st: Statement, unit: Currency = "ARS") =>
+  refinancingPosition(s, st, unit).debt ??
   Math.max(0, statementValue(st, "total", unit) - paid(s, st.id, unit));
+export const amountDue = (s: State, st: Statement, unit: Currency = "ARS") =>
+  refinancingMode(st, unit)
+    ? (refinancingPosition(s, st, unit).due ?? 0)
+    : balance(s, st, unit);
+export function monthlyTotal(s: State, st: Statement, unit: Currency = "ARS") {
+  const pos = refinancingPosition(s, st, unit);
+  return pos.valid
+    ? pos.r!.monthlyDue! + pos.beforePaid
+    : refinancingMode(st, unit)
+      ? 0
+      : statementValue(st, "total", unit);
+}
+
 export const effectiveRate = (
   s: State,
   st: Statement,
   unit: Currency = "ARS",
 ) =>
-  unit === "ARS"
-    ? (st.rate ??
-      s.cards.find((c) => c.id === st.cardId)?.financingRate ??
-      null)
-    : (st.rateUSD ??
-      s.cards.find((c) => c.id === st.cardId)?.financingRateUSD ??
-      null);
+  refinancingMode(st, unit)
+    ? refinancingPosition(s, st, unit).valid
+      ? refinancingPosition(s, st, unit).r!.rate
+      : null
+    : unit === "ARS"
+      ? (st.rate ??
+        s.cards.find((c) => c.id === st.cardId)?.financingRate ??
+        null)
+      : (st.rateUSD ??
+        s.cards.find((c) => c.id === st.cardId)?.financingRateUSD ??
+        null);
 export function requiredPayment(
   s: State,
   st: Statement,
   unit: Currency = "ARS",
 ): number | null {
+  if (refinancingMode(st, unit)) return refinancingPosition(s, st, unit).due;
   const remaining = balance(s, st, unit);
   if (!remaining) return 0;
   const mode =
@@ -94,6 +118,10 @@ export function overview(s: State, month: string, unit: Currency = "ARS") {
       invoices.filter((x) => x.paid).reduce((a, x) => a + x.amount, 0);
   return {
     statements,
+    obligationsIncomplete: statements.some(
+      (st) =>
+        refinancingMode(st, unit) && !refinancingPosition(s, st, unit).valid,
+    ),
     minimumIncomplete: statements.some(
       (st) => requiredPayment(s, st, unit) === null,
     ),
@@ -105,8 +133,11 @@ export function overview(s: State, month: string, unit: Currency = "ARS") {
     minimum,
     services,
     payment,
-    obligations: total + services,
-    pending: total + services - payment,
+    obligations:
+      statements.reduce((a, st) => a + monthlyTotal(s, st, unit), 0) + services,
+    pending:
+      statements.reduce((a, st) => a + amountDue(s, st, unit), 0) +
+      invoices.filter((i) => !i.paid).reduce((a, i) => a + i.amount, 0),
     debt: statements.reduce((a, x) => a + balance(s, x, unit), 0),
   };
 }
@@ -119,10 +150,19 @@ export function paymentPlan(
   unit: Currency = "ARS",
 ) {
   const rows = s.statements
-    .filter((x) => x.month === month && balance(s, x, unit) > 0)
+    .filter(
+      (x) =>
+        x.month === month &&
+        (balance(s, x, unit) > 0 || requiredPayment(s, x, unit) === null),
+    )
     .map((st) => ({
       statement: st,
       remaining: balance(s, st, unit),
+      dueDate: effectiveDueDate(st, unit),
+      refinanced: refinancingMode(st, unit),
+      extraLimit: refinancingMode(st, unit)
+        ? refinancingPosition(s, st, unit).extraCap
+        : Number.MAX_SAFE_INTEGER,
       minimum: requiredPayment(s, st, unit),
       rate: effectiveRate(s, st, unit),
       suggested: 0,
@@ -141,10 +181,13 @@ export function paymentPlan(
           r.statement.paymentsConfirmed === false
             ? "Confirmar los pagos posteriores al cierre."
             : r.minimum === null
-              ? "Confirmar el mínimo o la modalidad de pago total; no se supone mínimo cero."
+              ? r.refinanced
+                ? refinancingPosition(s, r.statement, unit).reason
+                : "Confirmar el mínimo o la modalidad de pago total; no se supone mínimo cero."
               : "La distribución espera la revisión de las otras cuentas.",
       })),
       blocked: true,
+      costComparisonIncomplete: true,
       shortfall: Math.max(0, sumMinimum - budget),
       unused: available,
       allocated: 0,
@@ -153,33 +196,32 @@ export function paymentPlan(
   // Minimums always first, earliest due date first, including overdue bills.
   rows.sort(
     (a, b) =>
-      a.statement.dueDate.localeCompare(b.statement.dueDate) ||
-      (b.rate ?? -1) - (a.rate ?? -1),
+      a.dueDate.localeCompare(b.dueDate) || (b.rate ?? -1) - (a.rate ?? -1),
   );
   for (const row of rows) {
     const n = Math.min(available, row.minimum ?? 0);
     row.suggested += n;
     available -= n;
-    row.reason =
-      (unit === "ARS"
-        ? row.statement.paymentMode
-        : row.statement.usdPaymentMode) === "full"
+    row.reason = row.refinanced
+      ? "Se cubre solo la obligación mensual confirmada del plan, no el saldo completo refinanciado."
+      : (unit === "ARS"
+            ? row.statement.paymentMode
+            : row.statement.usdPaymentMode) === "full"
         ? "Se cubre el total según la modalidad confirmada, por vencimiento."
         : "Primero se cubre el mínimo, en orden de vencimiento.";
   }
   const extra = [...rows].sort((a, b) =>
     strategy === "snowball"
       ? a.remaining - b.remaining
-      : strategy === "interest"
-        ? (b.rate ?? -1) - (a.rate ?? -1) ||
-          a.statement.dueDate.localeCompare(b.statement.dueDate)
-        : (daysUntil(a.statement.dueDate) <= 3 ? 0 : 1) -
-            (daysUntil(b.statement.dueDate) <= 3 ? 0 : 1) ||
-          (b.rate ?? -1) - (a.rate ?? -1) ||
-          a.remaining - b.remaining,
+      : (b.rate ?? -1) - (a.rate ?? -1) ||
+        a.dueDate.localeCompare(b.dueDate) ||
+        a.remaining - b.remaining,
   );
   for (const row of extra) {
-    const n = Math.min(available, row.remaining - row.suggested);
+    const n = Math.max(
+      0,
+      Math.min(available, row.remaining - row.suggested, row.extraLimit),
+    );
     if (n > 0) {
       row.suggested += n;
       available -= n;
@@ -188,8 +230,11 @@ export function paymentPlan(
           ? " El excedente reduce primero los saldos más pequeños."
           : strategy === "interest"
             ? " El excedente prioriza la tasa mensual informada más alta."
-            : " El excedente prioriza vencimientos inmediatos y luego la tasa mensual más alta.";
+            : " El excedente prioriza la tasa mensual conocida más alta, con las obligaciones ya cubiertas.";
     }
+    if (row.refinanced && row.extraLimit === 0)
+      row.reason +=
+        " No se proponen adelantos sin límite, beneficio y costo confirmados por el banco.";
     if (row.rate === null)
       row.reason += " Falta tasa: no es posible comparar su costo financiero.";
   }
@@ -200,6 +245,11 @@ export function paymentPlan(
     unused: available,
     allocated: rows.reduce((a, r) => a + r.suggested, 0),
     minimum: sumMinimum,
+    costComparisonIncomplete: rows.some(
+      (r) =>
+        r.remaining > r.suggested &&
+        (r.rate === null || (r.refinanced && r.extraLimit === 0)),
+    ),
   };
 }
 export function projection(
@@ -240,9 +290,11 @@ export function deadlines(s: State, unit: Currency = "ARS") {
       month: st.month,
       name: s.cards.find((c) => c.id === st.cardId)?.name ?? "Tarjeta",
       kind: "Tarjeta",
-      dueDate: st.dueDate,
-      amount: balance(s, st, unit),
+      dueDate: effectiveDueDate(st, unit),
+      amount: amountDue(s, st, unit),
       minimum: requiredPayment(s, st, unit),
+      uncertain:
+        refinancingMode(st, unit) && !refinancingPosition(s, st, unit).valid,
     })),
     ...s.invoices
       .filter(() => unit === "ARS")
@@ -255,6 +307,7 @@ export function deadlines(s: State, unit: Currency = "ARS") {
         dueDate: i.dueDate,
         amount: i.paid ? 0 : i.amount,
         minimum: 0,
+        uncertain: false,
       })),
   ].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 }

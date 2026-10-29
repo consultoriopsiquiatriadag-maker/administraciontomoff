@@ -73,6 +73,25 @@ export function buildStatementPrompt(state: State, cardId = "all"): string {
     ...(c.referenceLast4
       ? { referenceLast4: c.referenceLast4, referenceKind: c.referenceKind }
       : {}),
+    refinancing: (() => {
+      const latest = state.statements
+        .filter((st) => st.cardId === c.id)
+        .sort((a, b) => b.month.localeCompare(a.month))[0];
+      if (!latest) return [];
+      return (["ARS", "USD"] as const)
+        .filter(
+          (unit) =>
+            (unit === "ARS" ? latest.paymentMode : latest.usdPaymentMode) ===
+            "refinanced",
+        )
+        .map((unit) => ({
+          currency: unit,
+          month: latest.month,
+          status:
+            (unit === "ARS" ? latest.refinancingARS : latest.refinancingUSD)
+              ?.status ?? "pending",
+        }));
+    })(),
     purchases: state.purchases
       .filter((p) => p.cardId === c.id)
       .map((p) => ({
@@ -118,6 +137,13 @@ MÍNIMOS Y MODALIDAD
 - minimum es el mínimo ARS real. Si no se informa, usa null y paymentMode="unknown". Un mínimo ausente NO es cero, aunque el producto se llame Gold.
 - Usa paymentMode="minimum" únicamente si hay un mínimo informado. Usa "full" solo si el documento expresa claramente que exige el total; si no, deja "unknown" y pide confirmar la modalidad. No modifiques minimum para representar el total.
 - Aplica la misma regla a minimumUSD y usdPaymentMode. Si hay saldo USD pero no un mínimo separado ni obligación total explícita, minimumUSD=null y usdPaymentMode="unknown". Si el documento confirma saldo USD cero y mínimo USD cero, puedes usar 0 y "minimum".
+
+REFINANCIACIONES DEL SALDO TOTAL
+- Una deuda ya refinanciada en cuotas NO equivale a exigir este mes el saldo total original. No confundas una oferta de Plan V con un plan ya contratado, ni el interés de saldo revolving con un plan en cuotas.
+- Si la cuenta tiene una refinanciación vigente según el documento o el contexto del usuario, usa paymentMode="refinanced" para ARS o usdPaymentMode="refinanced" para USD. Conserva total y minimum exactamente como figuran en el documento; no los reemplaces por una cuota.
+- Agrega statement.refinancingARS o statement.refinancingUSD con esta estructura, completando SOLO datos expresos del plan y dejando lo desconocido vacío o null: {"status":"pending","startDate":"","asOfDate":"","dueDate":"","balance":null,"monthlyDue":null,"installmentAmount":null,"current":null,"total":null,"rate":null,"prepaymentMode":"unknown","prepaymentCap":null,"prepaymentBenefitConfirmed":false,"includedPayments":[],"notes":"Explica los datos que faltan confirmar del plan contratado"}.
+- balance es la deuda total vigente del plan informada por el banco; monthlyDue es lo pendiente exigible del período (cuota más otros cargos), no el capital total refinanciado. installmentAmount es el valor de la cuota. No deduzcas el capital multiplicando cuotas que podrían incluir intereses futuros.
+- Mantén status="pending" e includedPayments=[]: el usuario revisará saldos y pagos dentro del sitio. No confirmes adelantos ni ahorro por cancelación anticipada. Si el contexto muestra un plan previo y el nuevo documento no aclara su continuidad, indícalo como pendiente de revisión en lugar de asumir que terminó.
 
 TASAS
 - rate y card.financingRate son la TEM de financiación ARS de ESTE resumen, solo si está informada expresamente. rateUSD y card.financingRateUSD corresponden a USD. Si solo hay TNA/TEA o la base mensual es ambigua, deja null y conserva la información en notes.

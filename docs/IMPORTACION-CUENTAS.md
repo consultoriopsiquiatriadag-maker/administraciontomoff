@@ -38,7 +38,7 @@ Las tasas USD, cuando faltan, no se sustituyen por tasas ARS. Las tasas del pró
 
 ## Compatibilidad y privacidad
 
-La versión de datos y de las nuevas copias es **2**. Las bases y copias de versión 1 se leen y migran conservando sus valores; los importes antiguos y pagos sin moneda siguen siendo ARS. No vuelvas a una versión vieja de la app ni intentes importar un backup v2 en ella: no soporta estos campos. La versión física de IndexedDB sigue siendo 1 porque se conservan los mismos almacenes; cambia la versión del contenido.
+La versión de datos y de las nuevas copias es **3**. Las bases y copias de versiones 1 y 2 se leen y migran conservando sus valores; los importes antiguos y pagos sin moneda siguen siendo ARS. No vuelvas a una versión vieja de la app ni intentes importar un backup nuevo en ella: no soporta estos campos. La versión física de IndexedDB sigue siendo 1 porque se conservan los mismos almacenes; cambia la versión del contenido.
 
 El archivo `mis-cuentas-importacion.json` usa su propio formato `mis-cuentas-extracted` versión 1. No es un backup y no debe elegirse en Importar copia de seguridad. Los antiguos archivos de extracción para revisión tampoco son el paquete importable: usa el archivo preparado para esta función.
 

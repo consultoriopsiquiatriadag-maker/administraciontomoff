@@ -165,7 +165,7 @@ export async function exportBackup() {
     attachments = await readAttachments();
   return JSON.stringify({
     format: "mis-cuentas",
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     state,
     attachments: await Promise.all(
@@ -181,7 +181,7 @@ export async function exportBackup() {
 }
 const backupSchema = z.object({
   format: z.literal("mis-cuentas"),
-  version: z.union([z.literal(1), z.literal(2)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   state: z.unknown(),
   attachments: z
     .array(

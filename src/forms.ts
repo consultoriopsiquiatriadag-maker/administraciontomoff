@@ -124,6 +124,7 @@ export function fieldsFor(
             { value: "minimum", label: "Mínimo informado" },
             { value: "full", label: "Pago total exigible (confirmado)" },
             { value: "unknown", label: "Pendiente de confirmar" },
+            { value: "refinanced", label: "Saldo refinanciado: revisar plan" },
           ],
         },
         {
@@ -145,6 +146,7 @@ export function fieldsFor(
           label: "Modalidad de pago USD",
           options: [
             { value: "unknown", label: "Pendiente de confirmar" },
+            { value: "refinanced", label: "Saldo refinanciado: revisar plan" },
             { value: "minimum", label: "Mínimo USD informado" },
             { value: "full", label: "Pago total USD exigible (confirmado)" },
           ],
@@ -295,6 +297,22 @@ export function fieldsFor(
       ];
     case "budgets":
       return [
+        {
+          name: "allocationMode",
+          label: "Modo de distribución ARS",
+          options: [
+            { value: "cards", label: "Dinero reservado solo para tarjetas" },
+            {
+              value: "all",
+              label: "Repartir dinero entre servicios y tarjetas",
+            },
+          ],
+        },
+        money(
+          "availableForBills",
+          "Dinero disponible para todas las cuentas ARS",
+        ),
+        money("reserveOther", "Reservar para otros pagos pendientes ARS"),
         money("income", "Ingresos del mes"),
         money("cardBudget", "Dinero disponible para tarjetas ARS"),
         money(

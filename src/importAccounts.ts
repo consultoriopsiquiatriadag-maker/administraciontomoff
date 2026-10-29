@@ -103,7 +103,7 @@ export function parseExtracted(raw: string): ExtractedBundle {
         throw Error("Cuotas incompatibles");
     // Validate cross-field financial rules using the same model as manual entry.
     validateState({
-      version: 2,
+      version: 3,
       demo: false,
       cards: [{ ...a.card, id: "card" }],
       statements: [
@@ -211,6 +211,24 @@ export function mergeExtracted(
     if (!card.importKey) card.importKey = a.key;
     const st = {
       ...a.statement,
+      ...(a.statement.refinancingARS
+        ? {
+            refinancingARS: {
+              ...a.statement.refinancingARS,
+              status: "pending" as const,
+              includedPayments: [],
+            },
+          }
+        : {}),
+      ...(a.statement.refinancingUSD
+        ? {
+            refinancingUSD: {
+              ...a.statement.refinancingUSD,
+              status: "pending" as const,
+              includedPayments: [],
+            },
+          }
+        : {}),
       id: uid(),
       cardId: card.id,
       importKey: card.importKey + ":" + a.statement.month,
